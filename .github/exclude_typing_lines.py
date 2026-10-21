@@ -52,7 +52,8 @@ def main(report: Path) -> None:
     for cls in tree.iter('class'):
         lines = cls.find('lines')
         filename = cls.get('filename')
-        if lines is None or not filename:
+        # A data directory inside the package shows up as a namespace package.
+        if lines is None or not filename or not Path(filename).is_file():
             continue
         excluded = excluded_lines(Path(filename).read_text(), patterns)
         for line in list(lines):
