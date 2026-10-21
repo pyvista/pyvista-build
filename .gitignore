@@ -1,3 +1,5 @@
+*-build/
+*.egg-info/
 .DS_Store
 .coverage
 .coverage.*
@@ -5,11 +7,10 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
-*-build/
-*.egg-info/
 __pycache__/
 build/
 dist/
+doc/_build/
 pyvista_build/_version.py
 typing-coverage/
 uv.lock

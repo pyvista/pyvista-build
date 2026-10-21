@@ -1,0 +1,142 @@
+name: Build VTK
+
+# Builds the shipped manifest's VTK release on all three operating systems with the
+# command this package ships, then installs the wheel and imports it.
+on:
+  workflow_dispatch:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      CCACHE_MAXSIZE: 1G
+      SCCACHE_CACHE_SIZE: 1G
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      with:
+        persist-credentials: false
+        fetch-depth: 0
+
+    - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065   # v5.6.0
+      with:
+        python-version: '3.14'
+
+    - name: Install macOS build dependencies
+      if: runner.os == 'macOS'
+      run: brew install ccache
+
+    - name: Install pyvista-build
+      shell: bash
+        # `--manylinux` mounts this installed package into the container.
+      run: python -m pip install --upgrade pip .
+
+      # An artifact, not actions/cache: the repository's shared cache quota evicts a
+      # large entry before the next run can restore it.
+    - name: Find the newest compiler cache from this branch or main
+      id: find-compiler-cache
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BRANCH: ${{ github.head_ref || github.ref_name }}
+      run: |
+        # Newest first: this branch's own upload, else main's, from this repository only.
+        if ! run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=compiler-cache-${RUNNER_OS}&per_page=50" \
+          --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_repository_id == .workflow_run.repository_id)] as $a
+            | ([$a[] | select(.workflow_run.head_branch == env.BRANCH)] + [$a[] | select(.workflow_run.head_branch == "main")])[0].workflow_run.id // empty')"; then
+          echo "::warning::Could not list the compiler cache artifacts; building cold"
+          run_id=""
+        fi
+        if [ -n "$run_id" ]; then
+          echo "Restoring the compiler cache uploaded by run $run_id"
+        else
+          echo "No compiler cache artifact found; building cold"
+        fi
+        echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+
+    - name: Restore compiler cache
+      if: steps.find-compiler-cache.outputs.run-id != ''
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c   # v8.0.1
+      continue-on-error: true
+      with:
+        name: compiler-cache-${{ runner.os }}
+        run-id: ${{ steps.find-compiler-cache.outputs.run-id }}
+        github-token: ${{ github.token }}
+        path: compiler-cache
+
+    - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756   # v1.13.0
+      if: runner.os == 'Windows'
+
+    - name: Set up sccache (Windows)
+      if: runner.os == 'Windows'
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba   # v0.0.9
+
+    - name: Build the VTK wheel
+      shell: bash
+        # --manylinux (Linux) builds inside the manylinux_2_28 container.
+      env:
+        MANYLINUX: ${{ runner.os == 'Linux' && '--manylinux' || '' }}
+      run: |
+        pyvista-build vtk $MANYLINUX --yes --verbose \
+          --build-dir vtk-build --compiler-cache auto --cache-dir compiler-cache
+
+    - name: Show the full build log
+      if: failure()
+      shell: bash
+      run: |
+        if [ ! -f vtk-build/build.log ]; then
+          echo "The build stopped before compiling."
+        elif grep -Eq '^ninja: (build stopped|error)' vtk-build/build.log; then
+          cat vtk-build/build.log
+        else
+          echo "The build log shows no compile failure. See the failing step above."
+        fi
+
+      # The sccache action writes its own statistics to the summary on Windows.
+    - name: Compiler cache statistics
+      if: ${{ !cancelled() && runner.os != 'Windows' }}
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" = Linux ]; then
+          sudo apt-get install --yes --quiet ccache > /dev/null
+        fi
+        {
+          echo '## ccache'
+          echo '```'
+          ccache --dir compiler-cache --show-stats
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+      # Fork pull requests read the cache but never upload one.
+    - name: Upload compiler cache
+      if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a   # v7.0.1
+      with:
+        name: compiler-cache-${{ runner.os }}
+        path: compiler-cache
+        compression-level: 0
+        retention-days: 7
+
+    - name: Upload the wheel
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a   # v7.0.1
+      with:
+        name: vtk-wheel-${{ runner.os }}
+        path: vtk-build/wheelhouse/*.whl
+
+    - name: Install the wheel and import it
+      shell: bash
+      run: |
+        python -m pip install vtk-build/wheelhouse/*.whl
+        python -c "import vtk; print(vtk.vtkVersion.GetVTKVersion())"

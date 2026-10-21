@@ -31,4 +31,5 @@ uv sync --group dev
 uv run pytest
 uv run mypy
 uv run pre-commit run --all-files
+uv run --group docs sphinx-build -W doc doc/_build/html
 ```
