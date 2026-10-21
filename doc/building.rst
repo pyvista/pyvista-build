@@ -203,6 +203,38 @@ local edits:
 
     pyvista-build vtk --update --ref master
 
+CI Workflows
+~~~~~~~~~~~~
+A CI job builds from scratch every time, so a compiler cache is what keeps
+it short: a warm cache turns a build of hours into minutes.
+
+- Pass ``--yes`` and ``--verbose``, as in `Scripted Use`_.
+- ``--compiler-cache auto`` uses ``ccache`` or ``sccache``, whichever is on
+  ``PATH``. Install ``ccache`` on Linux and macOS (``apt-get install ccache``,
+  ``brew install ccache``) and set up ``sccache`` on Windows, where MSVC
+  needs it (`mozilla-actions/sccache-action
+  <https://github.com/mozilla-actions/sccache-action>`_).
+- ``--cache-dir`` puts the cache in a directory the job can save and restore
+  between runs. Cap its size with ``CCACHE_MAXSIZE`` or
+  ``SCCACHE_CACHE_SIZE``; 1 GB holds a full VTK build.
+- Save that directory at the end of the job and restore it at the start.
+  Keep the cache per operating system: object files from one do not help
+  another.
+- On Linux add ``--manylinux`` for a wheel that installs on other
+  machines; the container installs ``ccache`` itself and uses the same
+  directory.
+
+.. code-block:: bash
+
+    pyvista-build vtk --yes --verbose --compiler-cache auto --cache-dir compiler-cache
+
+`This repository's own workflow
+<https://github.com/pyvista/pyvista-build/blob/main/.github/workflows/build-vtk.yml>`_
+does this on all three operating systems, keeping the cache as a workflow
+artifact and printing ``ccache --show-stats`` in the job summary. A full
+hit rate finishes in about 10 minutes on Linux, 25 on macOS, and 35 on
+Windows.
+
 Other Backends
 ~~~~~~~~~~~~~~
 The same command builds any VTK backend whose source tree carries a
