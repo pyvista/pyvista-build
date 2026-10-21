@@ -34,10 +34,9 @@ from minutes to over an hour and needs several GB of disk.
 
     pyvista-build vtk --interactive
 
-``pyvista-build --help`` lists every flag. The result is a wheel, so
-once installed PyVista picks it up like the stock one: see
-`PYVISTA_VTK_BACKEND and the backend section of PyVista's installation guide
-<https://docs.pyvista.org/getting-started/installation.html#vtk-backend>`_.
+``pyvista-build --help`` lists every flag. The result is a wheel, so once
+installed (manually or with ``--install``) PyVista picks it up like the
+stock one.
 
 The Steps
 ~~~~~~~~~
