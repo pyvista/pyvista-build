@@ -208,7 +208,10 @@ def test_pip_tools_offered(tmp_path: Path, mocker: MockerFixture):
     console = Console(record=True, width=4000, force_terminal=False)
     Builder(_config(tmp_path, repair=True), console).build()
     out = console.export_text()
-    bullets = [f'  • {spec} into {sys.prefix}' for spec in ('cmake>=3.22', 'auditwheel', 'wheel')]
+    bullets = [
+        f'  • {spec} into {phases.short_path(sys.prefix)}'
+        for spec in ('cmake>=3.22', 'auditwheel', 'wheel')
+    ]
     assert '\n'.join(['The build installs:', *bullets]) in out
     assert re.search(r'wheel \(python\)\s+│ -\s+│ missing', out)
     assert re.search(r'setuptools \(python\)\s+│ .*│ ok', out)
@@ -735,9 +738,9 @@ def test_install_list_follows_flags(
         if line.startswith('  • ')
     ]
     specs = (['ninja>=1.11'] + (['auditwheel'] if repair else [])) if missing else []
-    expected = [f'{spec} into {sys.prefix}' for spec in specs]
+    expected = [f'{spec} into {phases.short_path(sys.prefix)}' for spec in specs]
     if install:
-        expected.append(f'the vtk wheel into {sys.prefix}, once it is built')
+        expected.append(f'the vtk wheel into {phases.short_path(sys.prefix)}, once it is built')
     assert bullets == expected
     assert run.called == bool(specs)
     if specs:
@@ -1460,7 +1463,7 @@ def test_build_in_manylinux(tmp_path: Path, mocker: MockerFixture):
     }
     assert install.called
     out = console.export_text()
-    assert f'  • the vtk wheel into {sys.prefix}, once it is built' in out
+    assert f'  • the vtk wheel into {phases.short_path(sys.prefix)}, once it is built' in out
     plan = out.index('The build runs these eight steps:')
     assert plan < out.index('Build tree and wheel go in') < out.index('2/8 Source')
     assert f'6. Wheel: package the wheel with setup.py bdist_wheel into {cfg.dist_dir}' in out
@@ -1739,7 +1742,7 @@ def test_plan(tmp_path: Path):
     assert plan['Configure'].endswith(', plus -DX=1. Compiler cache (--compiler-cache): none')
     assert plan['Build'].startswith('compile with 3 parallel jobs (--jobs)')
     assert plan['Build options'].endswith('--opt NAME=VALUE change them')
-    assert plan['Install'] == f'install the wheel into {sys.prefix}'
+    assert plan['Install'] == f'install the wheel into {phases.short_path(sys.prefix)}'
     with pytest.raises(BuildError, match='nope'):
         Builder(_config(tmp_path, with_=['nope']), Console(quiet=True)).plan()
 
@@ -1896,7 +1899,9 @@ def test_start_covers_the_planned_installs(tmp_path: Path, mocker: MockerFixture
     mocker.patch.object(tools, 'python_build_packages', return_value=['wheel'])
     mocker.patch.object(phases.sys.stdin, 'isatty', return_value=True)
     ask = mocker.patch.object(phases.Confirm, 'ask', return_value=True)
-    assert builder.plan()[0][1].endswith(f'. Install the missing wheel into {sys.prefix}')
+    assert builder.plan()[0][1].endswith(
+        f'. Install the missing wheel into {phases.short_path(sys.prefix)}'
+    )
     builder.confirm_start()
     builder.confirm_installs(builder.install_plan(['wheel']))
     assert ask.call_count == 1
@@ -2047,7 +2052,7 @@ def test_recheck_tools_after_clone(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(tools, 'pip_install_command', return_value=['pip', 'install'])
     with pytest.raises(BuildError, match='Still not usable after install: cmake>=99'):
         builder.recheck_tools()
-    assert confirm.call_args.args[0] == [f'cmake>=99 into {sys.prefix}']
+    assert confirm.call_args.args[0] == [f'cmake>=99 into {phases.short_path(sys.prefix)}']
     builder._checked_tools = {}
     detect.side_effect = [False, True]
     builder.recheck_tools()
@@ -2076,7 +2081,7 @@ def test_patchelf_offered_on_linux(tmp_path: Path, mocker: MockerFixture):
     run = mocker.patch.object(builder, 'run', side_effect=lambda *_a, **_k: absent.clear())
     builder.phase_tools()
     assert run.call_args.args[0] == ['pip', 'install', 'patchelf']
-    assert f'  • patchelf into {sys.prefix}' in builder.console.export_text()
+    assert f'  • patchelf into {phases.short_path(sys.prefix)}' in builder.console.export_text()
 
 
 def test_prompting_checks_the_selection_first(tmp_path: Path, mocker: MockerFixture):
@@ -2178,3 +2183,45 @@ def test_macos_compiler_needs_command_line_tools(tmp_path: Path, mocker: MockerF
     run.reset_mock()
     assert tools.detect(tools.required_tools('linux', {}, repair=False)[-1])
     assert not run.called
+
+
+def test_short_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Paths show relative to the working directory, else to ``~``, else unchanged."""
+    monkeypatch.chdir(tmp_path)
+    assert phases.short_path(tmp_path / 'vtk-build' / 'src') == str(Path('vtk-build') / 'src')
+    assert phases.short_path(tmp_path) == '.'
+    home = Path.home()
+    assert phases.short_path(home / 'x' / 'y') == f'~{os.sep}x{os.sep}y'
+    assert phases.short_path(home) == '~'
+    other = Path('/elsewhere/z') if os.name != 'nt' else Path('Z:/elsewhere/z')
+    assert phases.short_path(other) == str(other)
+
+
+def test_display_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A program found on PATH shows by name, and paths in the arguments are shortened."""
+    monkeypatch.chdir(tmp_path)
+    shown = phases._display_command(
+        [sys.executable, '-m', 'pip', 'install', str(tmp_path / 'w.whl')]
+    )
+    assert shown.startswith(Path(sys.executable).name)
+    assert str(tmp_path) not in shown
+    assert 'w.whl' in shown
+    elsewhere = str(tmp_path / 'bin' / 'tool')
+    assert phases._display_command([elsewhere, '--flag']).startswith(str(Path('bin') / 'tool'))
+
+
+def test_display_command_wraps():
+    """A command longer than the width continues on a new line before each option."""
+    cmd = ['cmake', '-S', 'src', '-B', 'build', '-DVTK_WRAP_PYTHON=ON', 'extra']
+    assert phases._display_command(cmd, width=80) == ' '.join(cmd)
+    assert phases._display_command(cmd, width=20) == (
+        'cmake -S src \\\n    -B build \\\n    -DVTK_WRAP_PYTHON=ON extra'
+    )
+
+
+def test_item_hanging_indent(tmp_path: Path):
+    """Wrapped list items continue aligned after the marker, without trailing spaces."""
+    out = StringIO()
+    build = Builder(_config(tmp_path), console=Console(file=out, width=30))
+    build.item('1.', 'Tools: check git, cmake, ninja and a compiler')
+    assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
