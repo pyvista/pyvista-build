@@ -201,7 +201,9 @@ def test_pip_tools_offered(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(tools, 'executable_version', return_value='99.0')
     mocker.patch.object(tools, 'python_build_packages', return_value=['wheel'])
     mocker.patch.object(
-        tools, 'pip_install_command', side_effect=lambda *s, args=(): ['pip', 'install', *args, *s]
+        tools,
+        'pip_install_command',
+        side_effect=lambda *s, args=(), **_: ['pip', 'install', *args, *s],
     )
     console = Console(record=True, width=4000, force_terminal=False)
     Builder(_config(tmp_path, repair=True), console).build()
@@ -491,7 +493,7 @@ def test_run_executes_and_reports(tmp_path: Path, mocker: MockerFixture):
 
 def test_run_resolves_from_the_build_path(tmp_path: Path, mocker: MockerFixture):
     builder = _builder(tmp_path, mocker)
-    assert builder.env['PATH'].startswith(tools.scripts_dir())
+    assert builder.env['PATH'].startswith(tools.interpreter().scripts)
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
     exe = bin_dir / 'demo-tool.exe'
@@ -998,7 +1000,9 @@ def test_wheel_hides_only_the_known_setuptools_warnings(tmp_path: Path, mocker: 
 
 def test_build_wheel_repair_install_paths(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(
-        tools, 'pip_install_command', side_effect=lambda *s, args=(): ['pip', 'install', *args, *s]
+        tools,
+        'pip_install_command',
+        side_effect=lambda *s, args=(), **_: ['pip', 'install', *args, *s],
     )
     builder = _builder(tmp_path, mocker, repair=True)
     mocker.patch.object(builder, 'confirm', return_value=False)
@@ -1297,11 +1301,8 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     assert manylinux.default_image().endswith('_aarch64')
     mocker.patch.object(manylinux.platform, 'machine', return_value='AMD64')
     assert manylinux.default_image().endswith('_x86_64')
-    tag = f'cp{sys.version_info.major}{sys.version_info.minor}'
-    mocker.patch.object(manylinux.sys, 'abiflags', '', create=True)
-    assert manylinux.container_python() == f'/opt/python/{tag}-{tag}/bin/python'
-    mocker.patch.object(manylinux.sys, 'abiflags', 't', create=True)
-    assert manylinux.container_python() == f'/opt/python/{tag}-{tag}t/bin/python'
+    assert manylinux.container_python((3, 14)) == '/opt/python/cp314-cp314/bin/python'
+    assert manylinux.container_python((3, 14), 't') == '/opt/python/cp314-cp314t/bin/python'
     assert manylinux.package_dir() == Path(manylinux.__file__).resolve().parent
     requirements = manylinux.requirements()
     assert any(r.startswith('rich') for r in requirements)

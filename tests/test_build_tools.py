@@ -12,6 +12,7 @@ from pyvista_build import tools
 from pyvista_build.manifest import OS_NAMES
 
 if TYPE_CHECKING:
+    import pytest
     from pytest_mock import MockerFixture
 
 
@@ -158,7 +159,7 @@ def test_which_and_command_succeeds(tmp_path: Path):
     assert Path(tools.which('fake-tool', {'PATH': str(tmp_path)})) == exe
     assert tools.which('fake-tool', {}) == 'fake-tool'
     assert tools.which(sys.executable) == sys.executable
-    assert tools.scripts_dir()
+    assert tools.interpreter().scripts
     assert tools.command_succeeds([sys.executable, '-c', 'pass'])
     assert not tools.command_succeeds([sys.executable, '-c', 'raise SystemExit(3)'])
     assert not tools.command_succeeds([str(tmp_path / 'missing')])
@@ -172,3 +173,74 @@ def test_default_jobs():
     assert tools.default_jobs(8, 64 * gib) == 8
     assert tools.default_jobs(16, 24 * gib) == 12
     assert tools.default_jobs(8, gib) == 1
+
+
+def test_interpreter_running_python():
+    """The running interpreter is described without starting a process."""
+    info = tools.interpreter()
+    assert info == tools.interpreter(sys.executable)
+    assert info.executable == sys.executable
+    assert info.prefix == sys.prefix
+    assert info.version == sys.version_info[:2]
+    assert info.has_pip is (tools.importlib.util.find_spec('pip') is not None)
+
+
+def test_interpreter_other_python(mocker: MockerFixture):
+    """Another interpreter is probed in a subprocess."""
+    run = mocker.patch.object(
+        tools.subprocess,
+        'run',
+        return_value=subprocess.CompletedProcess(
+            [],
+            0,
+            stdout='{"prefix": "/venv", "scripts": "/venv/bin", "version": [3, 13], '
+            '"abiflags": "t", "has_pip": false}',
+        ),
+    )
+    info = tools.interpreter('/venv/bin/python')
+    assert info == tools.Interpreter('/venv/bin/python', '/venv', '/venv/bin', (3, 13), 't', False)
+    assert run.call_args.args[0][:2] == ['/venv/bin/python', '-I']
+
+
+def test_default_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The active virtual environment wins, then ``.venv`` here, then the running Python."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv('VIRTUAL_ENV', raising=False)
+    assert tools.default_python() == sys.executable
+    bin_dir = 'Scripts' if os.name == 'nt' else 'bin'
+    exe = 'python.exe' if os.name == 'nt' else 'python'
+    local = tmp_path / '.venv' / bin_dir / exe
+    local.parent.mkdir(parents=True)
+    local.touch()
+    assert tools.default_python() == str(local)
+    active = tmp_path / 'other' / bin_dir / exe
+    active.parent.mkdir(parents=True)
+    active.touch()
+    monkeypatch.setenv('VIRTUAL_ENV', str(tmp_path / 'other'))
+    assert tools.default_python() == str(active)
+    monkeypatch.setenv('VIRTUAL_ENV', str(tmp_path / 'missing'))
+    assert tools.default_python() == str(local)
+
+
+def test_pip_install_command_for_interpreter(mocker: MockerFixture):
+    """The install targets the given interpreter, through pip or uv."""
+    target = tools.Interpreter('/venv/bin/python', '/venv', '/venv/bin', (3, 13), has_pip=False)
+    mocker.patch.object(tools.shutil, 'which', return_value='/usr/bin/uv')
+    cmd = tools.pip_install_command('cmake', python=target)
+    assert cmd == ['/usr/bin/uv', 'pip', 'install', '--python', '/venv/bin/python', 'cmake']
+    with_pip = tools.Interpreter('/venv/bin/python', '/venv', '/venv/bin', (3, 13))
+    cmd = tools.pip_install_command('cmake', python=with_pip)
+    assert cmd == ['/venv/bin/python', '-m', 'pip', 'install', 'cmake']
+
+
+def test_python_build_packages_for_interpreter(mocker: MockerFixture):
+    """Another interpreter is asked which build packages it cannot import."""
+    target = tools.Interpreter('/venv/bin/python', '/venv', '/venv/bin', (3, 13))
+    run = mocker.patch.object(
+        tools.subprocess,
+        'run',
+        return_value=subprocess.CompletedProcess([], 0, stdout='wheel\n'),
+    )
+    assert tools.python_build_packages(target) == ['wheel']
+    assert run.call_args.args[0][0] == '/venv/bin/python'
+    assert tools.python_build_packages(tools.interpreter()) == tools.python_build_packages()

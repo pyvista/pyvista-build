@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import platform
 import shlex
-import sys
 from typing import TYPE_CHECKING
 
 from packaging.requirements import Requirement
@@ -61,8 +60,16 @@ def default_image() -> str:
     return IMAGES[host_arch()]
 
 
-def container_python() -> str:
-    """Return the interpreter inside the image that matches the running Python.
+def container_python(version: tuple[int, int], abiflags: str = '') -> str:
+    """Return the interpreter inside the image that matches a Python build.
+
+    Parameters
+    ----------
+    version : tuple[int, int]
+        Major and minor version of the interpreter the wheel is built for.
+
+    abiflags : str, default: ''
+        Its ``sys.abiflags``; ``t`` selects the free-threaded build.
 
     Returns
     -------
@@ -71,8 +78,8 @@ def container_python() -> str:
         free-threaded build.
 
     """
-    tag = f'cp{sys.version_info.major}{sys.version_info.minor}'
-    abi = tag + ('t' if 't' in getattr(sys, 'abiflags', '') else '')
+    tag = f'cp{version[0]}{version[1]}'
+    abi = tag + ('t' if 't' in abiflags else '')
     return f'/opt/python/{tag}-{abi}/bin/python'
 
 
