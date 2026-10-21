@@ -59,7 +59,7 @@ def test_cli_env_backend(
     main('--dry-run --with io,web --without rendering -D X=1')
     out = capsys.readouterr().out
     assert 'Building backend: vtk' in out
-    assert str(tmp_path / 'vtk-build') in ''.join(out.split())
+    assert 'Source: vtk-build/src' in out
     assert '-DX=1' in out
     assert 'To build a fork instead' not in out
 
