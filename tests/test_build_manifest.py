@@ -20,8 +20,6 @@ from pyvista_build.manifest import resolve_options
 from pyvista_build.registry import find_manifest
 from pyvista_build.registry import known_backends
 from pyvista_build.registry import shipped_manifest
-from pyvista.core._vtk_utilities import _MAX_SUPPORTED_VTK_VERSION
-from pyvista.core._vtk_utilities import VersionInfo
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -64,18 +62,15 @@ def demo():
 def test_shipped_vtk_manifest_loads():
     path = shipped_manifest('vtk')
     assert path is not None
-    manifest = load_manifest(path, default_ref='v1')
+    manifest = load_manifest(path)
     assert manifest.name == 'vtk'
     assert 'rendering' in manifest.groups
     assert manifest.groups['headless'].os == ('linux',)
     assert find_manifest('vtk', None).path == path
-    with pytest.raises(ManifestError, match='default_ref'):
-        load_manifest(path)
 
 
-def test_vtk_default_ref_is_max_supported():
-    maximum = VersionInfo._format(_MAX_SUPPORTED_VTK_VERSION)
-    assert find_manifest('vtk', None).default_ref == f'v{maximum}'
+def test_vtk_default_ref_is_a_release_tag():
+    assert re.fullmatch(r'v\d+\.\d+\.\d+', find_manifest('vtk', None).default_ref)
 
 
 def test_load_manifest_default_ref(tmp_path: Path):
@@ -267,7 +262,7 @@ def test_find_manifest_prefers_tree(tmp_path: Path):
         'manifest_version = 1\n[backend]\nname = "vtk"\ndefault_ref = "r"\n'
     )
     assert find_manifest('vtk', tmp_path).default_ref == 'r'
-    with pytest.raises(ManifestError, match='ships no manifest'):
+    with pytest.raises(ManifestError, match='no manifest is shipped'):
         find_manifest('nope', tmp_path.parent / 'missing')
 
 

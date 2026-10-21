@@ -1,6 +1,7 @@
 manifest_version = 1
 
 [backend]
+default_ref = "v9.7.1"
 name = "vtk"
 url = "https://gitlab.kitware.com/vtk/vtk.git"
 
