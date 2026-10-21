@@ -9,110 +9,156 @@ One command builds a VTK wheel from source:
 It works on Linux, macOS, and Windows and follows the official `Building
 Python wheels
 <https://docs.vtk.org/en/latest/advanced/build_python_wheels.html>`_
-instructions, with the options PyVista's own CI uses. The wheel is built
-for, and installed into, the active virtual environment, else ``.venv``
-in the current directory, else the Python running the command;
-``--python PATH`` picks another interpreter. A first build takes from minutes
-to over an hour and needs several GB of disk. By default it
-says where the build goes and asks once before starting, then builds
-with those defaults straight through, printing every command as it
-runs without the environment variables it sets. Each command's output
-shows as one line that updates as it runs, with the time elapsed.
-``--verbose`` (``-v``) prints those variables and all of the output.
-Anything missing that it would install is listed before that question,
-which covers it too, and ``--yes`` answers it in advance. Add ``--interactive`` to
-walk through the build one step at a
-time: each step shows its settings, says what it is about to do and
-where, and waits for a yes. Press Enter to accept the default, answer
-``n`` to go through the settings one by one, or type the same flags the
-command line takes to change one in place.
+instructions, with the options PyVista's own CI uses. A first build takes
+from minutes to over an hour and needs several GB of disk.
+
+- The wheel is built for, and installed into, the active virtual
+  environment, else ``.venv`` in the current directory, else the Python
+  running the command. ``--python PATH`` picks another interpreter.
+- It says where the build goes and asks once before starting, then builds
+  with those defaults straight through. Anything missing that it would
+  install is listed before that question, which covers it too. ``--yes``
+  answers it in advance.
+- Every command is printed as it runs. Its output shows as one line that
+  updates as it runs, with the time elapsed. ``--verbose`` (``-v``) prints
+  all of the output and the environment variables each command sets.
+
+``--interactive`` walks through the build one step at a time:
+
+- Each step shows its settings, says what it is about to do and where, and
+  waits for a yes.
+- Enter accepts the default, ``n`` goes through the settings one by one, and
+  the same flags the command line takes change one in place.
 
 .. code-block:: bash
 
     pyvista-build vtk --interactive
 
-``pyvista-build --help`` lists every flag. The result is a wheel, so
-once installed PyVista picks it up like the stock one: see
-`PYVISTA_VTK_BACKEND and the backend section of PyVista's installation guide
-<https://docs.pyvista.org/getting-started/installation.html#vtk-backend>`_.
+``pyvista-build --help`` lists every flag. The result is a wheel, so once
+installed (manually or with ``--install``) PyVista picks it up like the
+stock one.
 
 The Steps
 ~~~~~~~~~
-1. **Tools.** ``git``, ``cmake``, ``ninja``, a C++ compiler, and the
-   wheel repair tool are checked before anything is downloaded (see
-   `Tooling`_ for what each one does). Everything the build
-   would install is listed before it starts, each item with where it goes:
-   ``cmake``, ``ninja``, and the
-   repair tool when missing or too old, ``setuptools`` and ``wheel``, and
-   the finished wheel with ``--install``. Starting the build covers the
-   whole list, ``--interactive`` asks again at this step, and ``--yes``
-   answers it in advance. Without a terminal
-   and without ``--yes`` the command stops instead of installing. A
-   missing compiler stops with instructions for your operating system.
-   On Windows, Visual Studio's build environment is imported
-   automatically. ``--compiler-cache auto`` adds a compiler cache
-   (``ccache`` or ``sccache``) when one is on ``PATH``. When the cloned
-   source asks for other ``cmake`` or ``ninja`` versions than the ones
-   checked, as on a first ``cvista`` build, those are checked again
-   after step 2.
-2. **Source.** VTK is cloned into ``./vtk-build/src`` at the release tag
-   PyVista supports. Use ``--ref`` for another tag, branch, or commit,
-   ``--build-dir`` to put everything somewhere else, and ``--source DIR``
-   to build a checkout you already have. An existing checkout is reused
-   as is, local edits included. With ``--interactive`` the clone prompt
-   also takes a fork's git URL or the path of another checkout, and an
-   existing checkout is confirmed before it is reused; answering with a
-   git URL there deletes it, after one more confirmation, and clones the
-   fork in its place. A build tree configured from one checkout cannot
-   build another, so switching checkouts asks before deleting the build
-   tree. Pass ``--clean`` or another ``--build-dir`` to avoid the question.
-3. **Build options.** On top of the modules every build has, the
-   modules to build are organized into named groups. The default set
-   matches the stock wheel plus what PyVista's CI enables:
+Every build runs the same eight steps, in this order. Each one prints what it
+is about to do, and ``--interactive`` waits for a yes before it runs.
 
-   - ``rendering``: OpenGL rendering, widgets, charts, and text
-   - ``io``: extra readers and writers (scene import, Exodus, Xdmf2)
-   - ``web``: web export modules used by trame and the Jupyter backends
-   - ``matplotlib``: Matplotlib-rendered math text and labels
-   - ``parallel``: DIY2-based parallel filters
-   - ``serialization``: object serialization and ``.pyi`` stub files
-   - ``headless`` (Linux, off by default): no X, rendering through EGL
-     or OSMesa, see `Off-Screen Plotting GPU Support`_
+1. Tools
+^^^^^^^^
+Ensure the tools the build needs are available.
 
-   ``--opt smp=VALUE`` picks the threading backend for SMP-enabled
-   filters: ``Sequential`` (the default, as in the PyPI wheels),
-   ``STDThread``, ``OpenMP``, or ``TBB``, which needs TBB installed.
-   At the prompt, ``n`` asks about each group in turn, and the
-   command-line flags work there as well:
+- Checks ``git``, ``cmake``, ``ninja``, a C++ compiler, and the wheel repair
+  tool before anything is downloaded. See `Tooling`_ for what each one does.
+- Lists everything the build would install, each item with where it goes:
+  ``cmake``, ``ninja``, and the repair tool when missing or too old,
+  ``setuptools`` and ``wheel``, and the finished wheel with ``--install``.
+- Starting the build covers that whole list. ``--interactive`` asks again at
+  this step, and ``--yes`` answers in advance. Without a terminal and without
+  ``--yes`` the command stops instead of installing.
+- A missing compiler stops with instructions for your operating system. On
+  Windows, Visual Studio's build environment is imported automatically.
+- ``--compiler-cache auto`` adds a compiler cache (``ccache`` or ``sccache``)
+  when one is on ``PATH``.
+- When the cloned source asks for other ``cmake`` or ``ninja`` versions than
+  the ones checked, as on a first ``cvista`` build, those are checked again
+  after step 2.
 
-   .. code-block:: bash
+2. Source
+^^^^^^^^^
+Get the VTK source to build.
 
-       pyvista-build vtk --without web,matplotlib
-       pyvista-build vtk --minimal --with rendering
-       pyvista-build vtk --opt smp=STDThread
+- Clones VTK into ``./vtk-build/src`` at the release tag PyVista supports.
+- ``--ref`` picks another tag, branch, or commit. ``--build-dir`` puts
+  everything somewhere else. ``--source DIR`` builds a checkout you already
+  have.
+- An existing checkout is reused as is, local edits included.
+- With ``--interactive`` the clone prompt also takes a fork's git URL or the
+  path of another checkout, and an existing checkout is confirmed before it is
+  reused. Answering with a git URL there deletes it, after one more
+  confirmation, and clones the fork in its place.
+- A build tree configured from one checkout cannot build another, so switching
+  checkouts asks before deleting the build tree. ``--clean`` or another
+  ``--build-dir`` avoids the question.
 
-4. **Configure** shows the build type, compiler cache, version suffix,
-   and extra CMake cache entries. ``n`` asks about each in turn, and
-   ``--build-type``, ``--compiler-cache``, ``--version-suffix``, and
-   ``-D`` change one directly. Then ``cmake`` runs. Every command is
-   printed in full before it runs.
-5. **Build** runs ``cmake --build`` with Ninja and logs the full output
-   to ``vtk-build/build.log``. When a command fails, its last lines of
-   output are printed and the build stops. The log has the complete
-   compiler output.
-   It runs one compile job per CPU core, at most one per 2 GB of
-   memory, since each job can take that much. ``--jobs`` sets the
-   number instead.
-6. **Wheel** runs ``setup.py bdist_wheel`` in the build tree.
-7. **Repair** bundles the libraries the wheel links against and sets its
-   platform tag, so it installs outside the build tree and on other
-   machines. A rerun reuses the repaired wheel when the built wheel's
-   contents have not changed, and ``--no-repair`` skips the step.
-8. **Install** installs the wheel into the current environment with
-   ``--install``, which starting the build covers. Without it,
-   ``--interactive`` offers to, and otherwise the wheel's path and the
-   ``pip`` command are printed. The wheel replaces the installed ``vtk``;
-   ``pip install --force-reinstall vtk`` goes back to the stock one.
+3. Build options
+^^^^^^^^^^^^^^^^
+Choose which modules and options to build.
+
+On top of the modules every build has, the modules to build are organized
+into named groups. The default set matches the stock wheel plus what
+PyVista's CI enables:
+
+- ``rendering``: OpenGL rendering, widgets, charts, and text
+- ``io``: extra readers and writers (scene import, Exodus, Xdmf2)
+- ``web``: web export modules used by trame and the Jupyter backends
+- ``matplotlib``: Matplotlib-rendered math text and labels
+- ``parallel``: DIY2-based parallel filters
+- ``serialization``: object serialization and ``.pyi`` stub files
+- ``headless`` (Linux, off by default): no X, rendering through EGL or
+  OSMesa, see `Off-Screen Plotting GPU Support`_
+
+Options:
+
+- ``--with`` and ``--without`` add or drop groups, ``--minimal`` keeps only
+  the required ones.
+- ``--opt smp=VALUE`` picks the threading backend for SMP-enabled filters:
+  ``Sequential`` (the default, as in the PyPI wheels), ``STDThread``,
+  ``OpenMP``, or ``TBB``, which needs TBB installed.
+- At the prompt, ``n`` asks about each group in turn, and the command-line
+  flags work there as well.
+
+.. code-block:: bash
+
+    pyvista-build vtk --without web,matplotlib
+    pyvista-build vtk --minimal --with rendering
+    pyvista-build vtk --opt smp=STDThread
+
+4. Configure
+^^^^^^^^^^^^
+Generate the build tree with CMake.
+
+- Shows the build type, compiler cache, version suffix, and extra CMake cache
+  entries, then runs ``cmake``.
+- ``--build-type``, ``--compiler-cache``, ``--version-suffix``, and ``-D``
+  change one directly. At the prompt, ``n`` asks about each in turn.
+- Every command is printed in full before it runs.
+
+5. Build
+^^^^^^^^
+Compile VTK.
+
+- Runs ``cmake --build`` with Ninja and logs the full output to
+  ``vtk-build/build.log``.
+- Uses one compile job per CPU core, at most one per 2 GB of memory, since
+  each job can take that much. ``--jobs`` sets the number instead.
+- When a command fails, its last lines of output are printed and the build
+  stops. The log has the complete compiler output.
+
+6. Wheel
+^^^^^^^^
+Package the build as a wheel.
+
+- Runs ``setup.py bdist_wheel`` in the build tree.
+
+7. Repair
+^^^^^^^^^
+Make the wheel installable outside the build tree.
+
+- Bundles the libraries the wheel links against and sets its platform tag, so
+  it installs outside the build tree and on other machines.
+- A rerun reuses the repaired wheel when the built wheel's contents have not
+  changed.
+- ``--no-repair`` skips the step.
+
+8. Install
+^^^^^^^^^^
+Install the wheel into the target environment.
+
+- ``--install`` installs the wheel into the target environment, which
+  starting the build covers. Without it, ``--interactive`` offers to, and
+  otherwise the wheel's path and the ``pip`` command are printed.
+- The wheel replaces the installed ``vtk``. ``pip install --force-reinstall
+  vtk`` goes back to the stock one.
 
 Scripted Use
 ~~~~~~~~~~~~
@@ -157,6 +203,38 @@ local edits:
 
     pyvista-build vtk --update --ref master
 
+CI Workflows
+~~~~~~~~~~~~
+A CI job builds from scratch every time, so a compiler cache is what keeps
+it short: a warm cache turns a build of hours into minutes.
+
+- Pass ``--yes`` and ``--verbose``, as in `Scripted Use`_.
+- ``--compiler-cache auto`` uses ``ccache`` or ``sccache``, whichever is on
+  ``PATH``. Install ``ccache`` on Linux and macOS (``apt-get install ccache``,
+  ``brew install ccache``) and set up ``sccache`` on Windows, where MSVC
+  needs it (`mozilla-actions/sccache-action
+  <https://github.com/mozilla-actions/sccache-action>`_).
+- ``--cache-dir`` puts the cache in a directory the job can save and restore
+  between runs. Cap its size with ``CCACHE_MAXSIZE`` or
+  ``SCCACHE_CACHE_SIZE``; 1 GB holds a full VTK build.
+- Save that directory at the end of the job and restore it at the start.
+  Keep the cache per operating system: object files from one do not help
+  another.
+- On Linux add ``--manylinux`` for a wheel that installs on other
+  machines; the container installs ``ccache`` itself and uses the same
+  directory.
+
+.. code-block:: bash
+
+    pyvista-build vtk --yes --verbose --compiler-cache auto --cache-dir compiler-cache
+
+`This repository's own workflow
+<https://github.com/pyvista/pyvista-build/blob/main/.github/workflows/build-vtk.yml>`_
+does this on all three operating systems, keeping the cache as a workflow
+artifact and printing ``ccache --show-stats`` in the job summary. A full
+hit rate finishes in about 10 minutes on Linux, 25 on macOS, and 35 on
+Windows.
+
 Other Backends
 ~~~~~~~~~~~~~~
 The same command builds any VTK backend whose source tree carries a
@@ -199,34 +277,60 @@ Portable Linux Wheels
 A wheel built on Linux is tagged for the ``glibc`` of the machine that
 built it and may not install elsewhere. To share one, build it inside a
 `manylinux <https://github.com/pypa/manylinux>`_ container, as PyVista's
-own CI does. ``--manylinux`` does that through `Docker
-<https://docs.docker.com/get-docker/>`_, which must be installed and
-running:
+own CI does.
+
+- ``--manylinux`` builds a Linux wheel only. It runs the build in a
+  container through `Docker <https://docs.docker.com/get-docker/>`_, so
+  Docker is needed for this flag and for nothing else.
+- Without ``--manylinux`` no Docker is involved on any operating system,
+  and macOS and Windows wheels are always built that way.
+- A macOS or Windows machine can still run ``--manylinux`` to produce a
+  Linux wheel, which it then cannot install.
+
+Docker must be installed and running first:
+
+- Linux: install `Docker Engine <https://docs.docker.com/engine/install/>`_
+  for your distribution, then add yourself to the ``docker`` group
+  (``sudo usermod -aG docker $USER``) and log in again so no ``sudo`` is
+  needed.
+- macOS: install `Docker Desktop for Mac
+  <https://docs.docker.com/desktop/setup/install/mac-install/>`_ (or
+  ``brew install --cask docker``) and start it.
+- Windows: install `Docker Desktop for Windows
+  <https://docs.docker.com/desktop/setup/install/windows-install/>`_ with
+  the WSL 2 backend and start it.
+
+``docker run --rm hello-world`` confirms it works. Then:
 
 .. code-block:: bash
 
     pyvista-build vtk --manylinux
 
-The container image matches your machine's architecture
-(``manylinux_2_28_x86_64`` or ``manylinux_2_28_aarch64``) and carries
-the same Python version as the one running the command. The source is
-cloned or updated on your machine first. The container then installs
-VTK's build dependencies and this package's requirements, mounts the
-``pyvista-build`` you are running read-only, and runs the remaining steps with the source
-and ``./vtk-build`` mounted. The repair step runs ``auditwheel`` there,
-which gives the wheel its ``manylinux`` tag and puts it in
-``vtk-build/wheelhouse``.
-Files written by the container are handed back to your user, even when
-the build fails. Pass another image with ``--manylinux-image``. With
-``--compiler-cache auto`` or ``ccache`` the container installs
-``ccache`` and keeps its cache between runs in
-``vtk-build/compiler-cache``, or in ``--cache-dir`` or
-``$CCACHE_DIR`` when set.
-``pip`` keeps its cache in ``vtk-build/pip-cache``. ``sccache`` is not
-available there. A build tree configured inside
-the container cannot be continued outside it.
-On a Linux host the install step runs afterwards. On macOS and Windows
-the wheel is only written, since it is for Linux.
+What happens:
+
+- The image matches your machine's architecture (``manylinux_2_28_x86_64``
+  or ``manylinux_2_28_aarch64``) and carries the same Python version as the
+  one running the command. ``--manylinux-image`` picks another image.
+- The source is cloned or updated on your machine first.
+- The container installs VTK's build dependencies and this package's
+  requirements, mounts the ``pyvista-build`` you are running read-only, and
+  runs the remaining steps with the source and ``./vtk-build`` mounted.
+- The repair step runs ``auditwheel`` there, which gives the wheel its
+  ``manylinux`` tag and puts it in ``vtk-build/wheelhouse``.
+- Files written by the container are handed back to your user, even when
+  the build fails.
+- On a Linux host the install step runs afterwards. On macOS and Windows the
+  wheel is only written, since it is for Linux.
+
+Caches and limits:
+
+- With ``--compiler-cache auto`` or ``ccache`` the container installs
+  ``ccache`` and keeps its cache between runs in ``vtk-build/compiler-cache``,
+  or in ``--cache-dir`` or ``$CCACHE_DIR`` when set. ``sccache`` is not
+  available there.
+- ``pip`` keeps its cache in ``vtk-build/pip-cache``.
+- A build tree configured inside the container cannot be continued outside
+  it.
 
 Tooling
 ~~~~~~~
@@ -241,10 +345,16 @@ What the command looks for and offers to install:
 - `Ninja <https://ninja-build.org/>`_ is the build tool that CMake
   generates files for; it runs the compiler across all cores and only
   rebuilds what changed. Installed with ``pip`` when missing.
-- **A C++ compiler**: GCC or Clang on Linux, Xcode's command-line tools
-  on macOS, Visual Studio with the C++ workload on Windows. Never
-  installed by the command. A missing one stops with the instructions
-  for your operating system.
+- **A C++ compiler**: `GCC <https://gcc.gnu.org/install/>`_ or
+  `Clang <https://clang.llvm.org/get_started.html>`_ on Linux, `Xcode's
+  command-line tools
+  <https://developer.apple.com/documentation/xcode/installing-the-command-line-tools>`_
+  on macOS (``xcode-select --install``), `Visual Studio
+  <https://visualstudio.microsoft.com/downloads/>`_ with the
+  `Desktop development with C++ workload
+  <https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation>`_
+  on Windows. Never installed by the command. A missing one stops with the
+  instructions for your operating system.
 - **Development headers on Linux** for Python, OpenGL, and X11:
   ``sudo apt install python3-dev libgl1-mesa-dev libx11-dev libxcursor-dev``
   on Debian and Ubuntu, or ``sudo dnf install python3-devel
