@@ -229,32 +229,50 @@ built it and may not install elsewhere. To share one, build it inside a
 `manylinux <https://github.com/pypa/manylinux>`_ container, as PyVista's
 own CI does. ``--manylinux`` does that through `Docker
 <https://docs.docker.com/get-docker/>`_, which must be installed and
-running:
+running first:
+
+- Linux: install `Docker Engine <https://docs.docker.com/engine/install/>`_
+  for your distribution, then add yourself to the ``docker`` group
+  (``sudo usermod -aG docker $USER``) and log in again so no ``sudo`` is
+  needed.
+- macOS: install `Docker Desktop for Mac
+  <https://docs.docker.com/desktop/setup/install/mac-install/>`_ (or
+  ``brew install --cask docker``) and start it.
+- Windows: install `Docker Desktop for Windows
+  <https://docs.docker.com/desktop/setup/install/windows-install/>`_ with
+  the WSL 2 backend and start it.
+
+``docker run --rm hello-world`` confirms it works. Then:
 
 .. code-block:: bash
 
     pyvista-build vtk --manylinux
 
-The container image matches your machine's architecture
-(``manylinux_2_28_x86_64`` or ``manylinux_2_28_aarch64``) and carries
-the same Python version as the one running the command. The source is
-cloned or updated on your machine first. The container then installs
-VTK's build dependencies and this package's requirements, mounts the
-``pyvista-build`` you are running read-only, and runs the remaining steps with the source
-and ``./vtk-build`` mounted. The repair step runs ``auditwheel`` there,
-which gives the wheel its ``manylinux`` tag and puts it in
-``vtk-build/wheelhouse``.
-Files written by the container are handed back to your user, even when
-the build fails. Pass another image with ``--manylinux-image``. With
-``--compiler-cache auto`` or ``ccache`` the container installs
-``ccache`` and keeps its cache between runs in
-``vtk-build/compiler-cache``, or in ``--cache-dir`` or
-``$CCACHE_DIR`` when set.
-``pip`` keeps its cache in ``vtk-build/pip-cache``. ``sccache`` is not
-available there. A build tree configured inside
-the container cannot be continued outside it.
-On a Linux host the install step runs afterwards. On macOS and Windows
-the wheel is only written, since it is for Linux.
+What happens:
+
+- The image matches your machine's architecture (``manylinux_2_28_x86_64``
+  or ``manylinux_2_28_aarch64``) and carries the same Python version as the
+  one running the command. ``--manylinux-image`` picks another image.
+- The source is cloned or updated on your machine first.
+- The container installs VTK's build dependencies and this package's
+  requirements, mounts the ``pyvista-build`` you are running read-only, and
+  runs the remaining steps with the source and ``./vtk-build`` mounted.
+- The repair step runs ``auditwheel`` there, which gives the wheel its
+  ``manylinux`` tag and puts it in ``vtk-build/wheelhouse``.
+- Files written by the container are handed back to your user, even when
+  the build fails.
+- On a Linux host the install step runs afterwards. On macOS and Windows the
+  wheel is only written, since it is for Linux.
+
+Caches and limits:
+
+- With ``--compiler-cache auto`` or ``ccache`` the container installs
+  ``ccache`` and keeps its cache between runs in ``vtk-build/compiler-cache``,
+  or in ``--cache-dir`` or ``$CCACHE_DIR`` when set. ``sccache`` is not
+  available there.
+- ``pip`` keeps its cache in ``vtk-build/pip-cache``.
+- A build tree configured inside the container cannot be continued outside
+  it.
 
 Tooling
 ~~~~~~~
