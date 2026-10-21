@@ -82,6 +82,7 @@ in its source tree, a dry run needs an existing checkout:
 
 .. program-output:: FORCE_COLOR=1 COLUMNS=90 pyvista-build vtk --dry-run
    :shell:
+   :cwd: ..
 
 API Reference
 -------------
