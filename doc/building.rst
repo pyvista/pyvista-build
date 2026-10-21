@@ -9,23 +9,26 @@ One command builds a VTK wheel from source:
 It works on Linux, macOS, and Windows and follows the official `Building
 Python wheels
 <https://docs.vtk.org/en/latest/advanced/build_python_wheels.html>`_
-instructions, with the options PyVista's own CI uses. The wheel is built
-for, and installed into, the active virtual environment, else ``.venv``
-in the current directory, else the Python running the command;
-``--python PATH`` picks another interpreter. A first build takes from minutes
-to over an hour and needs several GB of disk. By default it
-says where the build goes and asks once before starting, then builds
-with those defaults straight through, printing every command as it
-runs without the environment variables it sets. Each command's output
-shows as one line that updates as it runs, with the time elapsed.
-``--verbose`` (``-v``) prints those variables and all of the output.
-Anything missing that it would install is listed before that question,
-which covers it too, and ``--yes`` answers it in advance. Add ``--interactive`` to
-walk through the build one step at a
-time: each step shows its settings, says what it is about to do and
-where, and waits for a yes. Press Enter to accept the default, answer
-``n`` to go through the settings one by one, or type the same flags the
-command line takes to change one in place.
+instructions, with the options PyVista's own CI uses. A first build takes
+from minutes to over an hour and needs several GB of disk.
+
+- The wheel is built for, and installed into, the active virtual
+  environment, else ``.venv`` in the current directory, else the Python
+  running the command. ``--python PATH`` picks another interpreter.
+- It says where the build goes and asks once before starting, then builds
+  with those defaults straight through. Anything missing that it would
+  install is listed before that question, which covers it too. ``--yes``
+  answers it in advance.
+- Every command is printed as it runs. Its output shows as one line that
+  updates as it runs, with the time elapsed. ``--verbose`` (``-v``) prints
+  all of the output and the environment variables each command sets.
+
+``--interactive`` walks through the build one step at a time:
+
+- Each step shows its settings, says what it is about to do and where, and
+  waits for a yes.
+- Enter accepts the default, ``n`` goes through the settings one by one, and
+  the same flags the command line takes change one in place.
 
 .. code-block:: bash
 
