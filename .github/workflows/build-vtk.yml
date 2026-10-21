@@ -105,21 +105,6 @@ jobs:
         pyvista-build vtk $MANYLINUX --yes --verbose \
           --build-dir vtk-build --compiler-cache auto --cache-dir compiler-cache
 
-    # The sccache action writes its own statistics to the summary on Windows.
-    - name: Compiler cache statistics
-      if: ${{ !cancelled() && runner.os != 'Windows' }}
-      shell: bash
-      run: |
-        if [ "$RUNNER_OS" = Linux ]; then
-          sudo apt-get install --yes --quiet ccache > /dev/null
-        fi
-        {
-          echo '## ccache'
-          echo '```'
-          ccache --dir compiler-cache --show-stats
-          echo '```'
-        } >> "$GITHUB_STEP_SUMMARY"
-
       # Fork pull requests read the cache but never upload one.
     - name: Upload compiler cache
       if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

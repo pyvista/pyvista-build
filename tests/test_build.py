@@ -2225,3 +2225,44 @@ def test_item_hanging_indent(tmp_path: Path):
     build = Builder(_config(tmp_path), console=Console(file=out, width=30))
     build.item('1.', 'Tools: check git, cmake, ninja and a compiler')
     assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
+
+
+def test_cache_stats_in_job_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """The statistics are printed and appended to GITHUB_STEP_SUMMARY when it is set."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    summary = tmp_path / 'summary.md'
+    summary.write_text('# before\n')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    run = mocker.patch.object(
+        phases.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'Hits: 3\n', '')
+    )
+    builder._cache_stats()
+    assert run.call_args.args[0] == ['ccache', '--show-stats']
+    assert 'Hits: 3' in builder.console.export_text()
+    assert summary.read_text() == '# before\n## ccache\n```\nHits: 3\n```\n'
+
+
+def test_cache_stats_without_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """Without GITHUB_STEP_SUMMARY the statistics are only printed."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    run = mocker.patch.object(builder, 'run')
+    builder._cache_stats()
+    assert run.call_args.args[0] == ['ccache', '--show-stats']
+
+
+def test_container_mounts_job_summary(tmp_path: Path):
+    """The summary file is mounted into the container and named by GITHUB_STEP_SUMMARY."""
+    summary = tmp_path / 'summary.md'
+    mounts = {manylinux.WORK: tmp_path, manylinux.SUMMARY: summary}
+    cmd = manylinux.docker_command('img', mounts=mounts, script='true', interactive=False, env={})
+    assert f'{summary}:{manylinux.SUMMARY}' in cmd
+    assert f'GITHUB_STEP_SUMMARY={manylinux.SUMMARY}' in cmd
+    cmd = manylinux.docker_command(
+        'img', mounts={manylinux.WORK: tmp_path}, script='true', interactive=False, env={}
+    )
+    assert not any('GITHUB_STEP_SUMMARY' in part for part in cmd)

@@ -23,6 +23,7 @@ WORK = '/work'
 SOURCE = '/src'
 CACHE = '/cache'
 PACKAGE_ROOT = '/opt/pyvista-build-host'
+SUMMARY = '/github-step-summary.md'
 PIP_CACHE = f'{WORK}/pip-cache'
 CCACHE_VERSION = '4.14'
 CCACHE_SHA256 = {
@@ -231,6 +232,8 @@ def docker_command(
     for name in sorted(env):
         if name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS:
             cmd += ['--env', name]
+    if SUMMARY in mounts:
+        cmd += ['--env', f'GITHUB_STEP_SUMMARY={SUMMARY}']
     cmd += ['--workdir', WORK, image, 'bash', '-c', script]
     return cmd
 

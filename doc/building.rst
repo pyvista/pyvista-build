@@ -223,6 +223,9 @@ it short: a warm cache turns a build of hours into minutes.
 - On Linux add ``--manylinux`` for a wheel that installs on other
   machines; the container installs ``ccache`` itself and uses the same
   directory.
+- The cache statistics are printed after the build and, on GitHub Actions,
+  written to the job summary (``GITHUB_STEP_SUMMARY``), from inside the
+  container as well.
 
 .. code-block:: bash
 
@@ -231,7 +234,7 @@ it short: a warm cache turns a build of hours into minutes.
 `This repository's own workflow
 <https://github.com/pyvista/pyvista-build/blob/main/.github/workflows/build-vtk.yml>`_
 does this on all three operating systems, keeping the cache as a workflow
-artifact and printing ``ccache --show-stats`` in the job summary. A full
+artifact. A full
 hit rate finishes in about 10 minutes on Linux, 25 on macOS, and 35 on
 Windows.
 

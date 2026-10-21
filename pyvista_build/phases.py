@@ -1938,8 +1938,27 @@ class Builder:
             log=cfg.build_dir / 'build.log',
         )
         if self.launcher is not None:
-            self.run([self.launcher.name, '--show-stats'], fatal=False, passthrough=True)
+            self._cache_stats()
         self.hooks('post_build')
+
+    def _cache_stats(self) -> None:
+        """Print the compiler cache statistics, and add them to the GitHub job summary when set."""
+        assert self.launcher is not None
+        cmd = [self.launcher.name, '--show-stats']
+        summary = self.env.get('GITHUB_STEP_SUMMARY')
+        if not summary or self.config.dry_run:
+            self.run(cmd, fatal=False, passthrough=True)
+            return
+        self.say(f'[cyan]$ {escape(_display_command(cmd, self.env))}[/cyan]')
+        try:
+            stats = subprocess.run(cmd, env=self.env, capture_output=True, text=True, check=False)
+        except OSError as exc:
+            self.say(f'[red]{escape(str(exc))}[/red]')
+            return
+        text = stats.stdout.rstrip()
+        self.console.out(text, highlight=False)
+        with Path(summary).open('a', encoding='utf-8') as handle:
+            handle.write(f'## {self.launcher.name}\n```\n{text}\n```\n')
 
     def _jobs(self) -> tuple[int, int, int | None]:
         """Return the job count, the CPU cores and the physical memory it was chosen from."""
@@ -2210,6 +2229,9 @@ class Builder:
             self._check_installer()
             self.confirm_installs(self.install_plan([]))
         mounts: dict[str, Path] = {_manylinux.WORK: cfg.build_dir, _manylinux.SOURCE: cfg.src_dir}
+        summary = self.env.get('GITHUB_STEP_SUMMARY')
+        if summary and Path(summary).is_file():
+            mounts[_manylinux.SUMMARY] = Path(summary)
         if cfg.compiler_cache != 'none':
             cache_dir = self.compiler_cache_dir('CCACHE_DIR')
             mounts[_manylinux.CACHE] = cache_dir or cfg.build_dir / 'compiler-cache'
