@@ -1,0 +1,15 @@
+version: 2
+multi-ecosystem-groups:
+  maintenance:
+    schedule:
+      interval: quarterly
+    labels: [maintenance, dependencies]
+updates:
+- package-ecosystem: pip
+  directory: /
+  patterns: ['*']
+  multi-ecosystem-group: maintenance
+- package-ecosystem: github-actions
+  directory: /
+  patterns: ['*']
+  multi-ecosystem-group: maintenance

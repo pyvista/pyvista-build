@@ -1,0 +1,123 @@
+[build-system]
+build-backend = 'setuptools.build_meta'
+requires = ['setuptools>=64', 'setuptools_scm>=8']
+
+[project]
+authors = [{ name = 'The PyVista Developers', email = 'info@pyvista.org' }]
+classifiers = [
+  'Development Status :: 3 - Alpha',
+  'Intended Audience :: Developers',
+  'Operating System :: MacOS',
+  'Operating System :: Microsoft :: Windows',
+  'Operating System :: POSIX :: Linux',
+  'Programming Language :: Python :: 3',
+  'Programming Language :: Python :: 3.11',
+  'Programming Language :: Python :: 3.12',
+  'Programming Language :: Python :: 3.13',
+  'Programming Language :: Python :: 3.14',
+  'Topic :: Software Development :: Build Tools',
+  'Typing :: Typed',
+]
+dependencies = ['cyclopts>=4.0.0', 'packaging', 'rich']
+description = 'Build a VTK backend wheel for PyVista from source, guided step by step.'
+dynamic = ['version']
+keywords = ['cmake', 'pyvista', 'vtk', 'wheel']
+license = 'MIT'
+name = 'pyvista-build'
+readme = 'README.md'
+requires-python = '>=3.11'
+
+[project.urls]
+Repository = 'https://github.com/pyvista/pyvista-build'
+
+[dependency-groups]
+coverage = ['coverage[toml]==7.16.1', 'diff-cover==10.6.0']
+dev = ['lxml', 'mypy', 'pre-commit', 'pytest', 'pytest-cov', 'pytest-mock']
+
+[tool.coverage.run]
+branch = true
+omit = ['*/_version.py']
+parallel = true
+relative_files = true
+source = ['pyvista_build']
+
+[tool.coverage.report]
+# Overload stubs are signatures for type checkers, and TYPE_CHECKING blocks never run.
+exclude_also = ['^\s*@overload.*\n\s*def .*\(.*$', '^\s*if TYPE_CHECKING:']
+
+[tool.mypy]
+enable_error_code = ['ignore-without-code', 'redundant-expr', 'truthy-bool']
+packages = ['pyvista_build']
+strict = true
+warn_unreachable = true
+
+[tool.pytest.ini_options]
+addopts = '--cov=pyvista_build --cov-fail-under=95 --strict-config --strict-markers -ra'
+filterwarnings = ['error']
+testpaths = 'tests'
+
+[tool.ruff]
+indent-width = 4
+line-length = 99
+
+[tool.ruff.format]
+docstring-code-format = true
+# From https://numpydoc.readthedocs.io/en/latest/format.html
+# The length of docstring lines should be kept to 75 characters to facilitate
+# reading the docstrings in text terminals.
+docstring-code-line-length = 75
+quote-style = 'single'
+
+[tool.ruff.lint]
+extend-select = [
+  'A',
+  'B',
+  'C4',
+  'D',
+  'E',
+  'EM',
+  'F',
+  'FA',
+  'I',
+  'ICN',
+  'N',
+  'PERF',
+  'PGH',
+  'PIE',
+  'PT',
+  'RET',
+  'RSE',
+  'RUF',
+  'SIM',
+  'T10',
+  'T20',
+  'TCH',
+  'TID',
+  'UP',
+  'W',
+  'YTT',
+]
+ignore = ['D203', 'D211', 'D213']
+
+[tool.ruff.lint.per-file-ignores]
+'tests/*' = ['D103']
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-single-line = true
+force-sort-within-sections = true
+required-imports = ['from __future__ import annotations']
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.setuptools]
+license-files = ['LICENSE']
+packages = ['pyvista_build']
+
+[tool.setuptools.package-data]
+pyvista_build = ['manifests/*.toml', 'py.typed']
+
+[tool.setuptools_scm]
+version_scheme = 'release-branch-semver'
+write_to = 'pyvista_build/_version.py'

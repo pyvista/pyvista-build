@@ -1,0 +1,15 @@
+.DS_Store
+.coverage
+.coverage.*
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+*-build/
+*.egg-info/
+__pycache__/
+build/
+dist/
+pyvista_build/_version.py
+typing-coverage/
+uv.lock
