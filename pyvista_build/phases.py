@@ -225,8 +225,14 @@ def short_path(path: str | Path) -> str:
     return str(full)
 
 
-def _display_command(cmd: Sequence[str], env: Mapping[str, str] | None = None) -> str:
-    """Return a command for display: short paths, and the program's name when it is on PATH."""
+def _display_command(
+    cmd: Sequence[str], env: Mapping[str, str] | None = None, width: int | None = None
+) -> str:
+    """Return a command for display.
+
+    Paths are shortened, the program shows by name when it is on PATH, and a command
+    longer than ``width`` continues on a new line before each option.
+    """
     shown = list(cmd)
     program = Path(shown[0])
     if program.is_absolute():
@@ -234,10 +240,21 @@ def _display_command(cmd: Sequence[str], env: Mapping[str, str] | None = None) -
         if found and Path(found).resolve() == program.resolve():
             shown[0] = program.name
     cwd, home = str(Path.cwd()), str(Path.home())
-    text = _join(shown)
-    if cwd != home:
-        text = text.replace(cwd + os.sep, '')
-    return text.replace(home, '~')
+
+    def shorten(text: str) -> str:
+        if cwd != home:
+            text = text.replace(cwd + os.sep, '')
+        return text.replace(home, '~')
+
+    text = shorten(_join(shown))
+    if width is None or len(text) <= width:
+        return text
+    lines = [shown[:1]]
+    for part in shown[1:]:
+        if part.startswith('-') and lines != [shown[:1]]:
+            lines.append([])
+        lines[-1].append(part)
+    return ' \\\n    '.join(shorten(_join(line)) for line in lines)
 
 
 def _duration(seconds: float) -> str:
@@ -704,8 +721,10 @@ class Builder:
         where = f' (in {short_path(cwd)})' if cwd is not None else ''
         shown_env = (env or {}) if self.config.verbose else {}
         prefix = ''.join(f'{k}={shlex.quote(v)} ' for k, v in shown_env.items())
+        width = self.console.width - len(prefix) - 2
         self.say(
-            f'[cyan]$ {escape(prefix + _display_command(cmd, self.env))}[/cyan]{escape(where)}'
+            f'[cyan]$ {escape(prefix + _display_command(cmd, self.env, width))}[/cyan]'
+            f'{escape(where)}'
         )
         if self.config.dry_run:
             return
@@ -2057,8 +2076,8 @@ class Builder:
         )
         if cfg.os_name == 'linux':
             self.say(
-                "[dim]On Linux the wheel is tagged for this machine's glibc; portable manylinux "
-                'wheels need a manylinux container.[/dim]'
+                "On Linux the wheel is tagged for this machine's glibc; portable manylinux "
+                'wheels need a manylinux container.'
             )
         wheel = self.wheel or cfg.dist_dir / f'{cfg.backend}-*.whl'
         cmd, env = self.repair_command(wheel)
@@ -2122,7 +2141,7 @@ class Builder:
         if not wanted:
             self.say(
                 'Not installed. To install later:\n'
-                f'  [cyan]{escape(_display_command(cmd, self.env))}[/cyan]'
+                f'  [cyan]{escape(_display_command(cmd, self.env, self.console.width - 2))}[/cyan]'
             )
             return
         self.run(cmd)

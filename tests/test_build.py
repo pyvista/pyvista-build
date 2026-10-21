@@ -2208,3 +2208,12 @@ def test_display_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     assert 'w.whl' in shown
     elsewhere = str(tmp_path / 'bin' / 'tool')
     assert phases._display_command([elsewhere, '--flag']).startswith(str(Path('bin') / 'tool'))
+
+
+def test_display_command_wraps():
+    """A command longer than the width continues on a new line before each option."""
+    cmd = ['cmake', '-S', 'src', '-B', 'build', '-DVTK_WRAP_PYTHON=ON', 'extra']
+    assert phases._display_command(cmd, width=80) == ' '.join(cmd)
+    assert phases._display_command(cmd, width=20) == (
+        'cmake -S src \\\n    -B build \\\n    -DVTK_WRAP_PYTHON=ON extra'
+    )
