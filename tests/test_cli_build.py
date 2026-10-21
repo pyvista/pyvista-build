@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import fields
 import subprocess
+import sys
 from typing import TYPE_CHECKING
 from typing import Any
 
@@ -481,7 +482,11 @@ def captured(mocker: MockerFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 def test_cli_defaults(captured: list[BuildConfig], tmp_path: Path):
     main('vtk')
-    expected = BuildConfig(backend='vtk', build_dir=(tmp_path / 'vtk-build').resolve())
+    expected = BuildConfig(
+        backend='vtk',
+        build_dir=(tmp_path / 'vtk-build').resolve(),
+        python=tools.default_python(),
+    )
     assert captured[-1] == expected
 
 
@@ -534,6 +539,21 @@ def test_cli_path_flags(captured: list[BuildConfig], tmp_path: Path):
     assert captured[-1].build_dir == (tmp_path / 'out').resolve()
     assert captured[-1].cache_dir == (tmp_path / 'cache').resolve()
     assert captured[-1].source == (tmp_path / 'checkout').resolve()
+
+
+def test_cli_python(
+    captured: list[BuildConfig],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
+):
+    """``--python`` is resolved against the working directory; without it the default applies."""
+    monkeypatch.delenv('VIRTUAL_ENV', raising=False)
+    mocker.patch.object(tools, 'interpreter', return_value=tools.interpreter())
+    main('vtk --python venv/bin/python')
+    assert captured[-1].python == str(tmp_path / 'venv/bin/python')
+    main('vtk')
+    assert captured[-1].python == sys.executable
 
 
 def test_cli_manylinux(captured: list[BuildConfig]):

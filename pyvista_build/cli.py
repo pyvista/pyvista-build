@@ -26,6 +26,7 @@ from pyvista_build.phases import COMPILER_CACHES
 from pyvista_build.phases import BuildType
 from pyvista_build.phases import CompilerCache
 from pyvista_build.registry import known_backends
+from pyvista_build.tools import default_python
 
 #: Environment variable PyVista reads to pick its VTK backend; its value is the default backend.
 BACKEND_ENV_VAR = 'PYVISTA_VTK_BACKEND'
@@ -158,6 +159,14 @@ def build(
             'location, or ``<build-dir>/compiler-cache`` with ``--manylinux``.'
         ),
     ] = None,
+    python: Annotated[
+        Path | None,
+        Parameter(
+            help='Python to build the wheel for and install it into. Defaults to the active '
+            'virtual environment, else ``.venv`` in the current directory, else the Python '
+            'running the command.'
+        ),
+    ] = None,
     build_dir: Annotated[
         Path | None,
         Parameter(
@@ -276,6 +285,7 @@ def build(
         dry_run=dry_run,
         verbose=verbose,
         manylinux=(manylinux_image or default_image()) if manylinux else None,
+        python=str(python.absolute()) if python is not None else default_python(),
     )
     try:
         Builder(config, console=APP.console).build()

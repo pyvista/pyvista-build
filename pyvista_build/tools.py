@@ -5,6 +5,7 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass
 import importlib.util
+import json
 import os
 from pathlib import Path
 import platform
@@ -75,16 +76,82 @@ def git_tool() -> Tool:
     return Tool('git', ('git',), instructions='Install git: https://git-scm.com/downloads')
 
 
-def scripts_dir() -> str:
-    """Return the directory pip installs this interpreter's console scripts into.
+@dataclass(frozen=True)
+class Interpreter:
+    """The Python the wheel is built for and installed into."""
+
+    executable: str
+    prefix: str
+    scripts: str
+    version: tuple[int, int]
+    abiflags: str = ''
+    has_pip: bool = True
+
+
+_INTERPRETER_PROBE = (
+    'import importlib.util, json, sys, sysconfig; print(json.dumps({'
+    '"prefix": sys.prefix, "scripts": sysconfig.get_path("scripts"), '
+    '"version": sys.version_info[:2], "abiflags": getattr(sys, "abiflags", ""), '
+    '"has_pip": importlib.util.find_spec("pip") is not None}))'
+)
+
+
+def interpreter(python: str | None = None) -> Interpreter:
+    """Describe a Python interpreter.
+
+    Parameters
+    ----------
+    python : str, optional
+        Path to the interpreter. Defaults to the running one, which is described without
+        starting a process.
+
+    Returns
+    -------
+    Interpreter
+        Its prefix, scripts directory, version and whether ``pip`` is importable.
+
+    """
+    if python is None or Path(python) == Path(sys.executable):
+        return Interpreter(
+            sys.executable,
+            sys.prefix,
+            sysconfig.get_path('scripts'),
+            sys.version_info[:2],
+            getattr(sys, 'abiflags', ''),
+            importlib.util.find_spec('pip') is not None,
+        )
+    out = subprocess.run(
+        [python, '-I', '-c', _INTERPRETER_PROBE], capture_output=True, text=True, check=True
+    ).stdout
+    info = json.loads(out)
+    return Interpreter(
+        python,
+        info['prefix'],
+        info['scripts'],
+        tuple(info['version']),
+        info['abiflags'],
+        info['has_pip'],
+    )
+
+
+def default_python() -> str:
+    """Return the interpreter to build for when ``--python`` is not given.
 
     Returns
     -------
     str
-        Scripts directory.
+        The active virtual environment's interpreter, else ``.venv`` in the current
+        directory, else the running interpreter.
 
     """
-    return sysconfig.get_path('scripts')
+    venv = os.environ.get('VIRTUAL_ENV')
+    candidates = [Path(venv)] if venv else []
+    candidates.append(Path.cwd() / '.venv')
+    for root in candidates:
+        exe = root / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+        if exe.is_file():
+            return str(exe)
+    return sys.executable
 
 
 def which(name: str, env: Mapping[str, str] | None = None) -> str:
@@ -190,8 +257,10 @@ def detect(tool: Tool, env: Mapping[str, str] | None = None) -> bool:
         return True
 
 
-def pip_install_command(*specs: str, args: tuple[str, ...] = ()) -> list[str] | None:
-    """Return the command that installs packages into the running interpreter.
+def pip_install_command(
+    *specs: str, args: tuple[str, ...] = (), python: Interpreter | None = None
+) -> list[str] | None:
+    """Return the command that installs packages into an interpreter.
 
     Parameters
     ----------
@@ -201,18 +270,21 @@ def pip_install_command(*specs: str, args: tuple[str, ...] = ()) -> list[str] | 
     args : tuple[str, ...], default: ()
         Extra installer arguments placed before the specifiers.
 
+    python : Interpreter, optional
+        Interpreter to install into. Defaults to the running one.
+
     Returns
     -------
     list[str] | None
         ``pip`` or ``uv pip`` command, or ``None`` when neither is available.
 
     """
-    python = sys.executable
-    if importlib.util.find_spec('pip') is not None:
-        return [python, '-m', 'pip', 'install', *args, *specs]
+    target = python or interpreter()
+    if target.has_pip:
+        return [target.executable, '-m', 'pip', 'install', *args, *specs]
     uv = shutil.which('uv')
     if uv is not None:
-        return [uv, 'pip', 'install', '--python', python, *args, *specs]
+        return [uv, 'pip', 'install', '--python', target.executable, *args, *specs]
     return None
 
 
@@ -352,8 +424,13 @@ def default_jobs(cores: int, memory: int | None) -> int:
     return max(1, min(cores, memory // MEMORY_PER_JOB))
 
 
-def python_build_packages() -> list[str]:
-    """Return the packages ``setup.py bdist_wheel`` needs that are not importable.
+def python_build_packages(python: Interpreter | None = None) -> list[str]:
+    """Return the packages ``setup.py bdist_wheel`` needs that an interpreter cannot import.
+
+    Parameters
+    ----------
+    python : Interpreter, optional
+        Interpreter to check. Defaults to the running one.
 
     Returns
     -------
@@ -361,7 +438,19 @@ def python_build_packages() -> list[str]:
         Missing package names among ``setuptools`` and ``wheel``.
 
     """
-    return [name for name in PYTHON_BUILD_PACKAGES if importlib.util.find_spec(name) is None]
+    if python is None or Path(python.executable) == Path(sys.executable):
+        return [name for name in PYTHON_BUILD_PACKAGES if importlib.util.find_spec(name) is None]
+    probe = (
+        'import importlib.util, sys; '
+        'print(" ".join(n for n in sys.argv[1:] if importlib.util.find_spec(n) is None))'
+    )
+    out = subprocess.run(
+        [python.executable, '-I', '-c', probe, *PYTHON_BUILD_PACKAGES],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return out.split()
 
 
 def compiler_cache_tool(

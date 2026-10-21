@@ -287,6 +287,7 @@ class BuildConfig:
     verbose: bool = False
     manylinux: str | None = None
     in_container: bool = False
+    python: str | None = None
     os_name: str = field(default_factory=_tools.host_os)
 
     @property
@@ -333,7 +334,12 @@ class Builder:
         self.config = config
         self.console = console or Console()
         self.env: dict[str, str] = dict(os.environ)
-        self.env['PATH'] = f'{_tools.scripts_dir()}{os.pathsep}{self.env.get("PATH", "")}'
+        try:
+            self.interpreter = _tools.interpreter(config.python)
+        except (OSError, subprocess.CalledProcessError, ValueError) as err:
+            msg = f'Cannot use {config.python} as the target Python: {err}'
+            raise BuildError(msg) from None
+        self.env['PATH'] = f'{self.interpreter.scripts}{os.pathsep}{self.env.get("PATH", "")}'
         self._manifest: Manifest | None = None
         self._checked_tools: dict[str, str] | None = None
         self._planned_installs: list[str] = []
@@ -518,10 +524,10 @@ class Builder:
             self._planned_installs = self.install_plan([])
         else:
             specs = [f'{t.pip}{t.spec}' for t in tools if t.pip and not _tools.detect(t, self.env)]
-            specs += _tools.python_build_packages()
+            specs += _tools.python_build_packages(self.interpreter)
             self._planned_installs = self.install_plan(specs)
             tools_text = f'check {names}. ' + (
-                f'Install the missing {", ".join(specs)} into {sys.prefix}'
+                f'Install the missing {", ".join(specs)} into {self.prefix}'
                 if specs
                 else 'Nothing to install'
             )
@@ -581,7 +587,7 @@ class Builder:
                 f'{cfg.os_name} host'
             )
         elif cfg.install:
-            install = f'install the wheel into {sys.prefix}'
+            install = f'install the wheel into {self.prefix}'
         else:
             install = 'skipped. The install command is printed at the end, or pass --install'
         return [
@@ -599,6 +605,7 @@ class Builder:
         """Say where the build goes and ask before the first step; ``--yes`` answers yes."""
         cfg = self.config
         where = 'Build tree and wheel go' if cfg.source else 'Source, build tree, and wheel go'
+        self.say(f'The wheel is built for [bold]{escape(self.python)}[/bold].')
         self.say(
             f'{where} in [bold]{escape(str(cfg.build_dir))}[/bold]. '
             'Compiling takes from minutes to over an hour and needs several GB of disk.'
@@ -807,7 +814,12 @@ class Builder:
     @property
     def python(self) -> str:  # numpydoc ignore=RT01
         """Interpreter the wheel is built for."""
-        return sys.executable
+        return self.interpreter.executable
+
+    @property
+    def prefix(self) -> str:  # numpydoc ignore=RT01
+        """Environment the wheel and the build packages are installed into."""
+        return self.interpreter.prefix
 
     def hooks(self, name: str) -> None:
         """Run the manifest's hook commands inside the source tree, with the options' variables.
@@ -1154,12 +1166,12 @@ class Builder:
                 status = '[red]missing[/red]'
                 blocking.append(tool)
             table.add_row(tool.label, found, status)
-        missing_packages = _tools.python_build_packages()
+        missing_packages = _tools.python_build_packages(self.interpreter)
         for name in _tools.PYTHON_BUILD_PACKAGES:
             if name in missing_packages:
                 table.add_row(f'{name} (python)', '-', '[yellow]missing[/yellow]')
             else:
-                table.add_row(f'{name} (python)', escape(sys.prefix), '[green]ok[/green]')
+                table.add_row(f'{name} (python)', escape(self.prefix), '[green]ok[/green]')
         table.add_row(*self._compiler_cache_row())
         self.console.print(table)
         choice = cfg.compiler_cache
@@ -1174,10 +1186,11 @@ class Builder:
             raise BuildError(msg)
 
         specs = [f'{t.pip}{t.spec}' for t in missing_pip] + missing_packages
-        cmd = _tools.pip_install_command(*specs) if specs else None
+        cmd = _tools.pip_install_command(*specs, python=self.interpreter) if specs else None
         if specs and cmd is None:
             msg = (
-                f'Install {", ".join(specs)} into {sys.prefix} and run again (no pip or uv found).'
+                f'Install {", ".join(specs)} into {self.prefix} and run again '
+                '(no pip or uv found).'
             )
             raise BuildError(msg)
         if cfg.install:
@@ -1194,7 +1207,7 @@ class Builder:
 
     def _check_installer(self) -> None:
         """Raise when ``--install`` has no pip or uv to install the wheel with."""
-        if _tools.pip_install_command() is None:
+        if _tools.pip_install_command(python=self.interpreter) is None:
             msg = '--install needs pip or uv in this environment.'
             raise BuildError(msg)
 
@@ -1306,14 +1319,14 @@ class Builder:
         if not missing:
             return
         wanted = [f'{t.pip}{t.spec}' for t in missing]
-        cmd = _tools.pip_install_command(*wanted)
+        cmd = _tools.pip_install_command(*wanted, python=self.interpreter)
         if cmd is None:
             msg = (
-                f'Install {", ".join(wanted)} into {sys.prefix} and run again '
+                f'Install {", ".join(wanted)} into {self.prefix} and run again '
                 '(no pip or uv found).'
             )
             raise BuildError(msg)
-        self.confirm_installs([f'{spec} into {sys.prefix}' for spec in wanted])
+        self.confirm_installs([f'{spec} into {self.prefix}' for spec in wanted])
         self.run(cmd)
         if not cfg.dry_run:
             bad = [t.label for t in missing if not _tools.detect(t, self.env)]
@@ -1335,9 +1348,9 @@ class Builder:
             What gets installed, and where.
 
         """
-        items = [f'{spec} into {sys.prefix}' for spec in specs]
+        items = [f'{spec} into {self.prefix}' for spec in specs]
         if self.config.install:
-            items.append(f'the {self.config.backend} wheel into {sys.prefix}, once it is built')
+            items.append(f'the {self.config.backend} wheel into {self.prefix}, once it is built')
         return items
 
     def phase_groups(self) -> None:
@@ -2022,7 +2035,9 @@ class Builder:
             Command, or ``None`` when neither pip nor uv is available.
 
         """
-        return _tools.pip_install_command(str(wheel), args=('--no-deps', '--force-reinstall'))
+        return _tools.pip_install_command(
+            str(wheel), args=('--no-deps', '--force-reinstall'), python=self.interpreter
+        )
 
     def phase_install(self) -> None:
         """Install the wheel into the current environment when asked."""
@@ -2036,7 +2051,7 @@ class Builder:
             self.say(f'No pip or uv found; install the wheel yourself: {escape(str(wheel))}')
             return
         wanted = cfg.install or self.confirm(
-            f'Install {wheel.name} into {sys.prefix}? (n leaves it where it is)',
+            f'Install {wheel.name} into {self.prefix}? (n leaves it where it is)',
             default=False,
         )
         if not wanted:
@@ -2093,7 +2108,9 @@ class Builder:
             mounts[_manylinux.CACHE] = cache_dir or cfg.build_dir / 'compiler-cache'
         package_mount = f'{_manylinux.PACKAGE_ROOT}/pyvista_build'
         script = _manylinux.container_script(
-            python=_manylinux.container_python(),
+            python=_manylinux.container_python(
+                self.interpreter.version, self.interpreter.abiflags
+            ),
             packages=self.manifest.manylinux_packages,
             requirements=_manylinux.requirements(),
             config=json.dumps(self.container_config()),

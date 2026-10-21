@@ -10,7 +10,9 @@ It works on Linux, macOS, and Windows and follows the official `Building
 Python wheels
 <https://docs.vtk.org/en/latest/advanced/build_python_wheels.html>`_
 instructions, with the options PyVista's own CI uses. The wheel is built
-for the Python that runs the command. A first build takes from minutes
+for, and installed into, the active virtual environment, else ``.venv``
+in the current directory, else the Python running the command;
+``--python PATH`` picks another interpreter. A first build takes from minutes
 to over an hour and needs several GB of disk. By default it
 says where the build goes and asks once before starting, then builds
 with those defaults straight through, printing every command as it
