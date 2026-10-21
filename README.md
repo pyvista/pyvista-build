@@ -5,14 +5,16 @@ guided step by step.
 
 ```bash
 uv venv
-uvx pyvista-build vtk --python .venv/bin/python --install
-uv pip install --python .venv/bin/python pyvista
+uvx pyvista-build vtk --install
+uv pip install pyvista
 ```
 
 `pyvista-build BACKEND` clones the backend, checks the tools it needs and offers to
 install the missing ones, configures it with CMake, compiles it, packages the wheel,
-bundles the libraries it links against, and installs it into the interpreter given with
-`--python`. It asks once before starting and prints every command as it runs.
+bundles the libraries it links against, and installs it into the active virtual
+environment, else `.venv` in the current directory, else the Python running the command
+(`--python PATH` picks another one). It asks once before starting and prints every
+command as it runs.
 `--interactive` asks before each step, `--dry-run` prints the commands and runs nothing,
 and `--manylinux` runs the build inside a manylinux container for a portable Linux wheel.
 
