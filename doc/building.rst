@@ -290,10 +290,16 @@ What the command looks for and offers to install:
 - `Ninja <https://ninja-build.org/>`_ is the build tool that CMake
   generates files for; it runs the compiler across all cores and only
   rebuilds what changed. Installed with ``pip`` when missing.
-- **A C++ compiler**: GCC or Clang on Linux, Xcode's command-line tools
-  on macOS, Visual Studio with the C++ workload on Windows. Never
-  installed by the command. A missing one stops with the instructions
-  for your operating system.
+- **A C++ compiler**: `GCC <https://gcc.gnu.org/install/>`_ or
+  `Clang <https://clang.llvm.org/get_started.html>`_ on Linux, `Xcode's
+  command-line tools
+  <https://developer.apple.com/documentation/xcode/installing-the-command-line-tools>`_
+  on macOS (``xcode-select --install``), `Visual Studio
+  <https://visualstudio.microsoft.com/downloads/>`_ with the
+  `Desktop development with C++ workload
+  <https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation>`_
+  on Windows. Never installed by the command. A missing one stops with the
+  instructions for your operating system.
 - **Development headers on Linux** for Python, OpenGL, and X11:
   ``sudo apt install python3-dev libgl1-mesa-dev libx11-dev libxcursor-dev``
   on Debian and Ubuntu, or ``sudo dnf install python3-devel
