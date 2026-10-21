@@ -2076,7 +2076,7 @@ class Builder:
         )
         if cfg.os_name == 'linux':
             self.say(
-                "On Linux the wheel is tagged for this machine's glibc; portable manylinux "
+                "NOTE: on Linux the wheel is tagged for this machine's glibc; portable manylinux "
                 'wheels need a manylinux container.'
             )
         wheel = self.wheel or cfg.dist_dir / f'{cfg.backend}-*.whl'
