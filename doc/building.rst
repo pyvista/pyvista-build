@@ -45,6 +45,8 @@ is about to do, and ``--interactive`` waits for a yes before it runs.
 
 1. Tools
 ^^^^^^^^
+Ensure the tools the build needs are available.
+
 - Checks ``git``, ``cmake``, ``ninja``, a C++ compiler, and the wheel repair
   tool before anything is downloaded. See `Tooling`_ for what each one does.
 - Lists everything the build would install, each item with where it goes:
@@ -63,6 +65,8 @@ is about to do, and ``--interactive`` waits for a yes before it runs.
 
 2. Source
 ^^^^^^^^^
+Get the VTK source to build.
+
 - Clones VTK into ``./vtk-build/src`` at the release tag PyVista supports.
 - ``--ref`` picks another tag, branch, or commit. ``--build-dir`` puts
   everything somewhere else. ``--source DIR`` builds a checkout you already
@@ -78,6 +82,8 @@ is about to do, and ``--interactive`` waits for a yes before it runs.
 
 3. Build options
 ^^^^^^^^^^^^^^^^
+Choose which modules and options to build.
+
 On top of the modules every build has, the modules to build are organized
 into named groups. The default set matches the stock wheel plus what
 PyVista's CI enables:
@@ -109,6 +115,8 @@ Options:
 
 4. Configure
 ^^^^^^^^^^^^
+Generate the build tree with CMake.
+
 - Shows the build type, compiler cache, version suffix, and extra CMake cache
   entries, then runs ``cmake``.
 - ``--build-type``, ``--compiler-cache``, ``--version-suffix``, and ``-D``
@@ -117,6 +125,8 @@ Options:
 
 5. Build
 ^^^^^^^^
+Compile VTK.
+
 - Runs ``cmake --build`` with Ninja and logs the full output to
   ``vtk-build/build.log``.
 - Uses one compile job per CPU core, at most one per 2 GB of memory, since
@@ -126,10 +136,14 @@ Options:
 
 6. Wheel
 ^^^^^^^^
+Package the build as a wheel.
+
 - Runs ``setup.py bdist_wheel`` in the build tree.
 
 7. Repair
 ^^^^^^^^^
+Make the wheel installable outside the build tree.
+
 - Bundles the libraries the wheel links against and sets its platform tag, so
   it installs outside the build tree and on other machines.
 - A rerun reuses the repaired wheel when the built wheel's contents have not
@@ -138,6 +152,8 @@ Options:
 
 8. Install
 ^^^^^^^^^^
+Install the wheel into the target environment.
+
 - ``--install`` installs the wheel into the target environment, which
   starting the build covers. Without it, ``--interactive`` offers to, and
   otherwise the wheel's path and the ``pip`` command are printed.
