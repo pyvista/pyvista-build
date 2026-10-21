@@ -27,6 +27,9 @@ name = 'pyvista-build'
 readme = 'README.md'
 requires-python = '>=3.11'
 
+[project.scripts]
+pyvista-build = 'pyvista_build.cli:main'
+
 [project.urls]
 Repository = 'https://github.com/pyvista/pyvista-build'
 
