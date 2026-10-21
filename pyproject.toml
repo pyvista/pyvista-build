@@ -37,10 +37,12 @@ Repository = 'https://github.com/pyvista/pyvista-build'
 coverage = ['coverage[toml]==7.16.1', 'diff-cover==10.6.0']
 dev = ['lxml', 'mypy', 'pre-commit', 'pytest', 'pytest-cov', 'pytest-mock']
 docs = [
+  'erbsland-sphinx-ansi==1.2.4',
   'sphinx-book-theme==1.1.4',
   'sphinx-copybutton==0.5.2',
   'sphinx-notfound-page==1.1.0',
   'sphinx==8.2.3',
+  'sphinxcontrib-programoutput==0.20',
 ]
 
 [tool.coverage.run]

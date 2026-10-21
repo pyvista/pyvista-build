@@ -23,3 +23,4 @@ environment that has no VTK yet.
    :maxdepth: 2
 
    building
+   cli
