@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from pathlib import Path
 import subprocess
 import sys
 from typing import TYPE_CHECKING
@@ -18,8 +19,6 @@ from pyvista_build import tools
 from pyvista_build.cli import main
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from pytest_mock import MockerFixture
 
 
@@ -59,7 +58,7 @@ def test_cli_env_backend(
     main('--dry-run --with io,web --without rendering -D X=1')
     out = capsys.readouterr().out
     assert 'Building backend: vtk' in out
-    assert str(tmp_path / 'vtk-build') in ''.join(out.split())
+    assert f'Source: {Path("vtk-build") / "src"}' in out
     assert '-DX=1' in out
     assert 'To build a fork instead' not in out
 
