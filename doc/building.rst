@@ -277,9 +277,17 @@ Portable Linux Wheels
 A wheel built on Linux is tagged for the ``glibc`` of the machine that
 built it and may not install elsewhere. To share one, build it inside a
 `manylinux <https://github.com/pypa/manylinux>`_ container, as PyVista's
-own CI does. ``--manylinux`` does that through `Docker
-<https://docs.docker.com/get-docker/>`_, which must be installed and
-running first:
+own CI does.
+
+- ``--manylinux`` builds a Linux wheel only. It runs the build in a
+  container through `Docker <https://docs.docker.com/get-docker/>`_, so
+  Docker is needed for this flag and for nothing else.
+- Without ``--manylinux`` no Docker is involved on any operating system,
+  and macOS and Windows wheels are always built that way.
+- A macOS or Windows machine can still run ``--manylinux`` to produce a
+  Linux wheel, which it then cannot install.
+
+Docker must be installed and running first:
 
 - Linux: install `Docker Engine <https://docs.docker.com/engine/install/>`_
   for your distribution, then add yourself to the ``docker`` group
