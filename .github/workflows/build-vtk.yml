@@ -5,6 +5,18 @@ name: Build VTK
 on:
   workflow_dispatch:
   pull_request:
+      # labeled and unlabeled, so adding skip-build takes effect without a push.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+      # A pull request that only touches these never starts a build.
+    paths-ignore:
+    - '**.md'
+    - '**.rst'
+    - doc/**
+    - codecov.yml
+    - .pre-commit-config.yaml
+    - .github/dependabot.yml
+    - .github/release.yml
+    - .github/workflows/ci.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,6 +28,8 @@ permissions:
 
 jobs:
   build:
+      # The skip-build label turns the build off for a pull request by hand.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-build') }}
     strategy:
       fail-fast: false
       matrix:
