@@ -438,6 +438,26 @@ class Builder:
         highlight = _HIGHLIGHT if self._links else _HIGHLIGHT_UNLINKED
         self.console.print(highlight(Text.from_markup(message)))
 
+    def item(self, marker: str, message: str) -> None:
+        """Print a list item whose wrapped lines align after the marker.
+
+        Parameters
+        ----------
+        marker : str
+            Bullet or number, printed once.
+
+        message : str
+            Rich markup to print.
+
+        """
+        highlight = _HIGHLIGHT if self._links else _HIGHLIGHT_UNLINKED
+        first = f'  {marker} '
+        indent = ' ' * len(first)
+        text = highlight(Text.from_markup(message))
+        for i, line in enumerate(text.wrap(self.console, self.console.width - len(indent))):
+            line.rstrip()
+            self.console.print(Text(first if i == 0 else indent) + line)
+
     @property
     def _links(self) -> bool:
         """Whether output goes to a real terminal, which can open linked paths."""
@@ -484,7 +504,7 @@ class Builder:
             return
         self.say('The build installs:')
         for item in items:
-            self.say(f'  • {escape(item)}')
+            self.item('•', escape(item))
         cfg = self.config
         if cfg.yes or cfg.dry_run:
             return
@@ -925,7 +945,7 @@ class Builder:
             return
         self.say('The build runs these eight steps:')
         for number, (name, text) in enumerate(steps, start=1):
-            self.say(f'  {number}. [bold]{name}[/bold]: {escape(text)}')
+            self.item(f'{number}.', f'[bold]{name}[/bold]: {escape(text)}')
 
     def build(self) -> Path | None:
         """Run every phase.

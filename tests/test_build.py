@@ -2217,3 +2217,11 @@ def test_display_command_wraps():
     assert phases._display_command(cmd, width=20) == (
         'cmake -S src \\\n    -B build \\\n    -DVTK_WRAP_PYTHON=ON extra'
     )
+
+
+def test_item_hanging_indent(tmp_path: Path):
+    """Wrapped list items continue aligned after the marker, without trailing spaces."""
+    out = StringIO()
+    build = Builder(_config(tmp_path), console=Console(file=out, width=30))
+    build.item('1.', 'Tools: check git, cmake, ninja and a compiler')
+    assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
