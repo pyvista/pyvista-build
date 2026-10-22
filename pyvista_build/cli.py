@@ -527,7 +527,7 @@ def _defaults_tokens(
 
 
 def _utf8_streams() -> None:
-    """Switch stdout and stderr to UTF-8 so the progress output survives a cp1252 console."""
+    """Switch stdout and stderr to UTF-8 so the output survives a cp1252 pipe or log file."""
     for stream in (sys.stdout, sys.stderr):
         encoding = (getattr(stream, 'encoding', None) or '').lower().replace('-', '')
         if encoding != 'utf8' and hasattr(stream, 'reconfigure'):

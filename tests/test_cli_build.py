@@ -718,13 +718,19 @@ def test_describe_defaults():
 
 
 def test_main_switches_streams_to_utf8(monkeypatch: pytest.MonkeyPatch):
-    """A cp1252 console is reconfigured to UTF-8 before anything is printed."""
+    """A cp1252 stdout and stderr carry a spinner frame as UTF-8 once main runs."""
     out = TextIOWrapper(BytesIO(), encoding='cp1252')
+    err = TextIOWrapper(BytesIO(), encoding='cp1252')
     monkeypatch.setattr(sys, 'stdout', out)
-    monkeypatch.setattr(sys, 'stderr', TextIOWrapper(BytesIO(), encoding='utf-8'))
+    monkeypatch.setattr(sys, 'stderr', err)
+    monkeypatch.setattr(cli.APP, 'version', 'pyvista-build ⠋')
     main('--version')
-    assert out.encoding == 'utf-8'
-    assert sys.stderr.encoding == 'utf-8'
+    cli.APP.error_console.print('⠋')
+    out.flush()
+    err.flush()
+    assert out.buffer.getvalue() == 'pyvista-build ⠋\n'.encode()
+    assert err.buffer.getvalue() == '⠋\n'.encode()
+    assert (out.errors, err.errors) == ('replace', 'replace')
 
 
 def test_user_options():
