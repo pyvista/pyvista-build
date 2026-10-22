@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import replace
+import hashlib
 from io import StringIO
 import json
 import os
@@ -27,6 +29,7 @@ from pyvista_build import __main__ as build_main
 from pyvista_build import load_manifest
 from pyvista_build import manylinux
 from pyvista_build import phases
+from pyvista_build import repair
 from pyvista_build import tools
 from pyvista_build.manifest import OS_NAMES
 from pyvista_build.manifest import cmake_unset
@@ -977,6 +980,27 @@ def test_repair_skips_a_wheel_it_already_repaired(tmp_path: Path, mocker: Mocker
     assert run.call_count == 4
 
 
+def test_repair_runs_again_when_the_strip_flag_changes(tmp_path: Path, mocker: MockerFixture):
+    """Toggling [repair] strip on macOS is a different repair of the same wheel."""
+    builder = _builder(tmp_path, mocker, os_name='macos', repair=True)
+    cfg = builder.config
+    cfg.dist_dir.mkdir(parents=True)
+    cfg.wheelhouse.mkdir(parents=True)
+    built = cfg.dist_dir / 'vtk-9.7.0-cp314-cp314-macosx_11_0_arm64.whl'
+    repaired = cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-macosx_11_0_arm64.whl'
+    run = mocker.patch.object(
+        builder, 'run', side_effect=lambda *_, **__: _write_wheel(repaired, b'x')
+    )
+    strip = mocker.patch.object(repair, 'strip_wheel', return_value=[])
+    _write_wheel(built, b'one')
+    for flag, runs in ((False, 1), (True, 2), (True, 2), (False, 3)):
+        builder._manifest = replace(builder.manifest, repair_strip=flag)
+        builder.wheel = built
+        builder.phase_repair()
+        assert run.call_count == runs
+    assert strip.call_count == 1
+
+
 def test_wheel_hides_only_the_known_setuptools_warnings(tmp_path: Path, mocker: MockerFixture):
     """The filters drop two exact warnings, keep any other, and step aside for --verbose."""
     builder = _builder(tmp_path, mocker)
@@ -1264,6 +1288,166 @@ def test_wheel_env_and_repair_command(tmp_path: Path, mocker: MockerFixture, os_
     assert repairer[os_name] not in [
         t.name for t in tools.required_tools(os_name, {}, repair=False)
     ]
+
+
+@pytest.mark.parametrize('os_name', OS_NAMES)
+def test_repair_command_reads_the_repair_table(
+    tmp_path: Path, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch, os_name
+):
+    """The table's strip flag and extra arguments land before the wheel path."""
+    mocker.patch.object(phases.platform, 'machine', return_value='x86_64')
+    mocker.patch.object(manylinux, 'host_arch', return_value='aarch64')
+    builder = _builder(tmp_path, mocker, os_name=os_name)
+    args = dict.fromkeys(OS_NAMES, ())
+    args[os_name] = ('--extra', 'one')
+    builder._manifest = replace(builder.manifest, repair_strip=True, repair_args=args)
+    cfg = builder.config
+    wheel = tmp_path / 'vtk.whl'
+    out = str(cfg.wheelhouse)
+    expected = {
+        'linux': ['auditwheel', 'repair', '--strip', '--extra', 'one', str(wheel), '-w', out],
+        'windows': [
+            'delvewheel',
+            'repair',
+            '--add-path',
+            str(cfg.cmake_dir / 'bin'),
+            '-w',
+            out,
+            '--extra',
+            'one',
+            str(wheel),
+        ],
+        'macos': [
+            'delocate-wheel',
+            '--require-archs',
+            'x86_64',
+            '-w',
+            out,
+            '--extra',
+            'one',
+            str(wheel),
+        ],
+    }
+    assert builder.repair_command(wheel)[0] == expected[os_name]
+    cfg.in_container = True
+    monkeypatch.delenv(manylinux.PLAT_VAR, raising=False)
+    cmd = builder.repair_command(wheel)[0]
+    if os_name == 'linux':
+        assert cmd == [
+            'auditwheel',
+            'repair',
+            '--strip',
+            '--plat',
+            'manylinux_2_28_aarch64',
+            '--extra',
+            'one',
+            str(wheel),
+            '-w',
+            out,
+        ]
+        monkeypatch.setenv(manylinux.PLAT_VAR, 'manylinux_2_34_aarch64')
+        assert builder.repair_command(wheel)[0][4] == 'manylinux_2_34_aarch64'
+    else:
+        assert cmd == expected[os_name]
+
+
+@pytest.mark.parametrize('os_name', ['linux', 'macos'])
+def test_phase_repair_strips_a_macos_wheel(tmp_path: Path, mocker: MockerFixture, os_name):
+    """The strip runs on the repaired wheel on macOS only, and a dry run says so."""
+    builder = _builder(tmp_path, mocker, os_name=os_name, yes=True)
+    builder._manifest = replace(builder.manifest, repair_strip=True)
+    cfg = builder.config
+    repaired = cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-macosx_11_0_arm64.whl'
+    cfg.wheelhouse.mkdir(parents=True)
+    mocker.patch.object(builder, 'run', side_effect=lambda *_, **__: _write_wheel(repaired, b'x'))
+    strip = mocker.patch.object(repair, 'strip_wheel', return_value=['vtkmodules/lib.so'])
+    builder.phase_repair()
+    assert builder.wheel == repaired
+    out = builder.console.export_text()
+    if os_name == 'macos':
+        strip.assert_called_once_with(repaired)
+        assert 'Stripped and re-signed 1 libraries' in out
+    else:
+        strip.assert_not_called()
+        assert 'Stripped' not in out
+
+    cfg.dry_run = True
+    builder.console = Console(record=True, width=4000, force_terminal=False)
+    builder.phase_repair()
+    out = builder.console.export_text()
+    assert ('$ strip -x and codesign --force --sign -' in out) == (os_name == 'macos')
+    assert strip.call_count == (1 if os_name == 'macos' else 0)
+
+
+def test_strip_wheel(tmp_path: Path, mocker: MockerFixture):
+    """Mach-O libraries are stripped and re-signed, and RECORD is recomputed."""
+    wheel = tmp_path / 'demo-1.0-py3-none-any.whl'
+    macho = b'\xcf\xfa\xed\xfe' + b'\0' * 12
+    members = {
+        'demo/__init__.py': b'',
+        'demo/fast.so': macho,
+        'demo/libdemo.dylib': macho,
+        'demo/text.so': b'not a library',
+        'demo/odd,name.txt': b'x',
+        'demo-1.0.dist-info/RECORD': b'stale\n',
+    }
+    with zipfile.ZipFile(wheel, 'w') as archive:
+        archive.writestr('demo/', b'')
+        for name, data in members.items():
+            info = zipfile.ZipInfo(name, (2020, 1, 1, 0, 0, 0))
+            info.external_attr = 0o755 << 16
+            archive.writestr(info, data)
+
+    def fake_strip(cmd: list[str], *, check: bool) -> None:
+        if cmd[0] == 'strip':
+            Path(cmd[-1]).write_bytes(macho[:8])
+
+    run = mocker.patch.object(repair.subprocess, 'run', side_effect=fake_strip)
+    assert repair.strip_wheel(wheel) == ['demo/fast.so', 'demo/libdemo.dylib']
+    calls = [c.args[0] for c in run.call_args_list]
+    assert [c[:-1] for c in calls] == [
+        ['strip', '-x'],
+        ['codesign', '--force', '--sign', '-'],
+        ['strip', '-x'],
+        ['codesign', '--force', '--sign', '-'],
+    ]
+    assert [Path(c[-1]).parts[-2:] for c in calls] == [('demo', 'fast.so')] * 2 + [
+        ('demo', 'libdemo.dylib')
+    ] * 2
+    assert not list(tmp_path.glob('*.strip'))
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        assert archive.read('demo/fast.so') == macho[:8]
+        assert archive.read('demo/text.so') == b'not a library'
+        assert archive.getinfo('demo/fast.so').external_attr == 0o755 << 16
+        record = archive.read('demo-1.0.dist-info/RECORD').decode().splitlines()
+    assert names == list(members)
+    digest = _sha256(macho[:8])
+    assert record == [
+        'demo/__init__.py,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0',
+        f'demo/fast.so,sha256={digest},8',
+        f'demo/libdemo.dylib,sha256={digest},8',
+        'demo/text.so,sha256=' + _sha256(b'not a library') + ',13',
+        '"demo/odd,name.txt",sha256=' + _sha256(b'x') + ',1',
+        'demo-1.0.dist-info/RECORD,,',
+    ]
+
+
+def _sha256(data: bytes) -> str:
+    """Return the RECORD form of a sha256 digest."""
+    return base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+
+
+def test_strip_wheel_without_record(tmp_path: Path, mocker: MockerFixture):
+    """A wheel without RECORD is repacked as is."""
+    wheel = tmp_path / 'demo.whl'
+    with zipfile.ZipFile(wheel, 'w') as archive:
+        archive.writestr('demo/text.so', b'plain')
+    run = mocker.patch.object(repair.subprocess, 'run')
+    assert repair.strip_wheel(wheel) == []
+    run.assert_not_called()
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.namelist() == ['demo/text.so']
 
 
 @pytest.mark.parametrize('os_name', OS_NAMES)

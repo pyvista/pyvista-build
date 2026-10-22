@@ -245,6 +245,16 @@ def test_resolve_options(demo):
         ),
         ({'manifest_version': '1'}, "'manifest_version' must be"),
         ({'manifest_version': True}, "'manifest_version' must be"),
+        ({'repair': True}, "'repair' must be a table"),
+        ({'repair': {'strip': 'yes'}}, re.escape("[repair]: 'strip' must be a boolean")),
+        ({'repair': {'linux': '--strip'}}, re.escape("[repair]: 'linux' must be a list")),
+        (
+            {'repair': {'strpi': True}},
+            re.escape(
+                "[repair]: unknown key(s) ['strpi']; expected some of "
+                "['strip', 'linux', 'macos', 'windows']"
+            ),
+        ),
     ],
 )
 def test_parse_manifest_errors(patch, match):
@@ -366,3 +376,16 @@ def test_env_options_and_unset_keys():
     assert entries == ['A=ON', 'C=OFF', 'LTO=OFF']
     assert cmake_unset(manifest, 'linux', groups=['a']) == ['B', 'SHARED']
     assert cmake_unset(manifest, 'linux', groups=['a', 'b']) == []
+
+
+def test_repair_table():
+    assert parse_manifest(MINIMAL_MANIFEST).repair_strip is False
+    assert parse_manifest(MINIMAL_MANIFEST).repair_args == dict.fromkeys(OS_NAMES, ())
+    data = dict(MINIMAL_MANIFEST, repair={'strip': True, 'linux': ['--exclude', 'libGL.so.1']})
+    manifest = parse_manifest(data)
+    assert manifest.repair_strip is True
+    assert manifest.repair_args == {
+        'linux': ('--exclude', 'libGL.so.1'),
+        'macos': (),
+        'windows': (),
+    }

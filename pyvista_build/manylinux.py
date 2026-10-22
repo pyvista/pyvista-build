@@ -15,10 +15,10 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
     from collections.abc import Sequence
 
-IMAGES = {
-    'x86_64': 'quay.io/pypa/manylinux_2_28_x86_64',
-    'aarch64': 'quay.io/pypa/manylinux_2_28_aarch64',
-}
+POLICY = 'manylinux_2_28'
+IMAGES = {arch: f'quay.io/pypa/{POLICY}_{arch}' for arch in ('x86_64', 'aarch64')}
+#: Set by the pypa images to the platform tag auditwheel should produce.
+PLAT_VAR = 'AUDITWHEEL_PLAT'
 WORK = '/work'
 SOURCE = '/src'
 CACHE = '/cache'
@@ -61,6 +61,18 @@ def default_image() -> str:
 
     """
     return IMAGES[host_arch()]
+
+
+def container_plat() -> str:
+    """Return the platform tag the repair inside the container asks auditwheel for.
+
+    Returns
+    -------
+    str
+        ``AUDITWHEEL_PLAT`` as the image sets it, else the default policy for this architecture.
+
+    """
+    return os.environ.get(PLAT_VAR) or f'{POLICY}_{host_arch()}'
 
 
 def container_python(version: tuple[int, int], abiflags: str = '') -> str:
