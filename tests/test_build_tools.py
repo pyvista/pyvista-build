@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 from typing import TYPE_CHECKING
+
+from packaging.requirements import Requirement
 
 from pyvista_build import tools
 from pyvista_build.manifest import OS_NAMES
@@ -244,3 +247,17 @@ def test_python_build_packages_for_interpreter(mocker: MockerFixture):
     assert tools.python_build_packages(target) == ['wheel']
     assert run.call_args.args[0][0] == '/venv/bin/python'
     assert tools.python_build_packages(tools.interpreter()) == tools.python_build_packages()
+
+
+def test_tools_extra_covers_every_pip_tool():
+    """The ``tools`` extra lists every package the tool would otherwise install from PyPI."""
+    pyproject = Path(__file__).parents[1] / 'pyproject.toml'
+    with pyproject.open('rb') as handle:
+        extra = tomllib.load(handle)['project']['optional-dependencies']['tools']
+    listed = {Requirement(entry).name for entry in extra}
+    wanted = {'setuptools', 'wheel'}
+    for os_name in OS_NAMES:
+        for tool in tools.required_tools(os_name, {}, repair=True):
+            if tool.pip:
+                wanted.add(tool.pip)
+    assert listed == wanted
