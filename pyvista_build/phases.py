@@ -2020,8 +2020,7 @@ class Builder:
             log=cfg.build_dir / 'build.log',
         )
         if self.launcher is not None:
-            self._say_cache_delta(before)
-            self._cache_stats()
+            self._cache_stats(self._cache_delta(before))
         self.hooks('post_build')
 
     def _cache_counts(self) -> tuple[int, int] | None:
@@ -2043,26 +2042,30 @@ class Builder:
             return None
         return parse_cache_counts(self.launcher.name, stats.stdout)
 
-    def _say_cache_delta(self, before: tuple[int, int] | None) -> None:
-        """Say how many compilations this run hit and missed the compiler cache."""
+    def _cache_delta(self, before: tuple[int, int] | None) -> str | None:
+        """Say how many compilations this run hit and missed the compiler cache, and return it."""
         after = self._cache_counts()
         if before is None or after is None:
-            return
+            return None
         hits, misses = after[0] - before[0], after[1] - before[1]
-        if hits + misses <= 0:
-            self.say(
-                'Compiler cache: nothing was compiled this run, so the statistics below are '
-                'unchanged from earlier builds.'
+        if hits < 0 or misses < 0:
+            return None
+        if hits + misses == 0:
+            line = (
+                'Compiler cache: no cacheable compilation ran this run, so the statistics '
+                'below are unchanged from earlier builds.'
             )
-            return
-        share = 100 * hits / (hits + misses)
-        self.say(
-            f'Compiler cache this run: [bold]{hits}[/bold] hits, [bold]{misses}[/bold] misses '
-            f'({share:.0f}% hit rate). The statistics below cover every build so far.'
-        )
+        else:
+            share = 100 * hits / (hits + misses)
+            line = (
+                f'Compiler cache this run: {hits} hits, {misses} misses ({share:.1f}% hit '
+                'rate). The statistics below are cumulative.'
+            )
+        self.say(escape(line))
+        return line
 
-    def _cache_stats(self) -> None:
-        """Print the compiler cache statistics, and add them to the GitHub job summary when set."""
+    def _cache_stats(self, delta: str | None = None) -> None:
+        """Print the cache statistics and write this run's line and them to the job summary."""
         assert self.launcher is not None
         cmd = [self.launcher.name, '--show-stats']
         summary = self.env.get('GITHUB_STEP_SUMMARY')
@@ -2085,7 +2088,10 @@ class Builder:
             )
             return
         with Path(summary).open('a', encoding='utf-8') as handle:
-            handle.write(f'## {self.launcher.name}\n```\n{text}\n```\n')
+            handle.write(f'## {self.launcher.name}\n')
+            if delta:
+                handle.write(f'{delta}\n\n')
+            handle.write(f'```\n{text}\n```\n')
 
     def _jobs(self) -> tuple[int, int, int | None]:
         """Return the job count, the CPU cores and the physical memory it was chosen from."""

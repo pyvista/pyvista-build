@@ -259,9 +259,9 @@ it short: a warm cache turns a build of hours into minutes.
   machines; the container installs ``ccache`` itself and uses the same
   directory.
 - After the build, one line says how many of this run's compilations hit
-  and missed the cache, and the cumulative statistics are printed and, on
-  GitHub Actions, written to the job summary (``GITHUB_STEP_SUMMARY``), from
-  inside the container as well.
+  and missed the cache, followed by the cumulative statistics. On GitHub
+  Actions both go to the job summary (``GITHUB_STEP_SUMMARY``), from inside
+  the container as well.
 
 .. code-block:: bash
 

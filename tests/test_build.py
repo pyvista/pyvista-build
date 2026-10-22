@@ -2498,10 +2498,14 @@ def test_item_hanging_indent(tmp_path: Path):
     assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
 
 
-CCACHE_STATS = 'direct_cache_hit\t{d}\npreprocessed_cache_hit\t{p}\ncache_miss\t{m}\nother\t1\n'
+CCACHE_STATS = (
+    'direct_cache_hit\t{d}\npreprocessed_cache_hit\t{p}\ncache_miss\t{m}\n'
+    'direct_cache_miss\t9\npreprocessed_cache_miss\t9\nlocal_storage_miss\t9\ncalled_for_link\t1\n'
+)
 SCCACHE_STATS = (
     'Compile requests   {r}\nCache hits         {h}\nCache misses       {m}\n'
-    'Cache hits (C/C++) {h}\n'
+    'Cache hits (C/C++) {h}\nCache hits rate    58.33 %\nAverage cache write  0.002 s\n'
+    'Cache location     Local disk: "/tmp/sccache"\n'
 )
 
 
@@ -2523,9 +2527,11 @@ def test_parse_cache_counts(name, text, expected):
 @pytest.mark.parametrize(
     ('before', 'after', 'said'),
     [
-        ((5, 4), (5, 4), 'nothing was compiled this run'),
-        ((5, 4), (105, 4), 'Compiler cache this run: 100 hits, 0 misses (100% hit rate)'),
-        ((0, 0), (30, 10), 'Compiler cache this run: 30 hits, 10 misses (75% hit rate)'),
+        ((5, 4), (5, 4), 'no cacheable compilation ran this run'),
+        ((5, 4), (105, 4), 'Compiler cache this run: 100 hits, 0 misses (100.0% hit rate)'),
+        ((0, 0), (30, 10), 'Compiler cache this run: 30 hits, 10 misses (75.0% hit rate)'),
+        ((0, 0), (299, 1), 'Compiler cache this run: 299 hits, 1 misses (99.7% hit rate)'),
+        ((50, 4), (5, 4), None),
         (None, (30, 10), None),
     ],
 )
@@ -2534,15 +2540,22 @@ def test_build_says_cache_delta(tmp_path: Path, mocker: MockerFixture, before, a
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
     builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
     builder._activate_compiler_cache()
-    mocker.patch.object(builder, 'run')
-    mocker.patch.object(builder, 'hooks')
+    reads_before_build: list[int] = []
     counts = mocker.patch.object(builder, '_cache_counts', side_effect=[before, after])
+    mocker.patch.object(
+        builder, 'run', side_effect=lambda *_, **__: reads_before_build.append(counts.call_count)
+    )
+    mocker.patch.object(builder, 'hooks')
+    stats = mocker.patch.object(builder, '_cache_stats')
     builder.phase_build()
-    assert counts.call_count == 2
+    assert (reads_before_build, counts.call_count) == ([1], 2)
+    delta = stats.call_args.args[0]
     out = builder.console.export_text()
     if said is None:
+        assert delta is None
         assert 'this run' not in out
     else:
+        assert said in delta
         assert said in out
 
 
@@ -2584,6 +2597,8 @@ def test_cache_stats_in_job_summary(tmp_path: Path, mocker: MockerFixture, monke
     assert run.call_args.args[0] == ['ccache', '--show-stats']
     assert 'Hits: 3' in builder.console.export_text()
     assert summary.read_text() == '# before\n## ccache\n```\nHits: 3\n```\n'
+    builder._cache_stats('this run: 1 hit')
+    assert summary.read_text().endswith('## ccache\nthis run: 1 hit\n\n```\nHits: 3\n```\n')
 
 
 def test_cache_stats_tool_missing(tmp_path: Path, mocker: MockerFixture, monkeypatch):
