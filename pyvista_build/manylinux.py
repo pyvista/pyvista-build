@@ -250,9 +250,9 @@ def docker_command(
         mode = ':ro' if inside.startswith(PACKAGE_ROOT) else ''
         cmd += ['--volume', f'{outside}:{inside}{mode}']
     for name in sorted(env):
-        cache = name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS
+        cache = name.startswith(('CCACHE_', 'SCCACHE_'))
         listed = any(fnmatch.fnmatchcase(name, pattern) for pattern in passthrough)
-        if cache or listed or name in COLOR_VARS:
+        if name in COLOR_VARS or ((cache or listed) and name not in _HOST_PATH_VARS):
             cmd += ['--env', name]
     if SUMMARY in mounts:
         cmd += ['--env', f'GITHUB_STEP_SUMMARY={SUMMARY}']

@@ -1511,6 +1511,12 @@ def test_manifest_manylinux_packages(tmp_path: Path):
     assert manifest.manylinux_packages == ('libX11-devel',)
     assert manifest.manylinux_env == ('DEMO_*', 'TAG')
     path.write_text(
+        'manifest_version = 1\n[backend]\nname = "demo"\ndefault_ref = "v1"\n'
+        '[manylinux]\nenv = "TAG"\n'
+    )
+    with pytest.raises(ManifestError, match=r"\[manylinux\]: 'env' must be a list of strings"):
+        load_manifest(path)
+    path.write_text(
         'manifest_version = 1\nmanylinux = 1\n[backend]\nname = "demo"\ndefault_ref = "v1"\n'
     )
     with pytest.raises(ManifestError, match="'manylinux' must be a table"):
@@ -1604,10 +1610,14 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     listed = manylinux.docker_command(
         'img', mounts={}, script='true', interactive=False, env=env, passthrough=['DEMO_*', 'TAG']
     )
-    assert [listed[i + 1] for i, part in enumerate(listed) if part == '--env'] == [
-        'DEMO_PGO',
-        'TAG',
-    ]
+    forwarded = [listed[i + 1] for i, part in enumerate(listed) if part == '--env']
+    assert forwarded == ['DEMO_PGO', 'TAG']
+    env = {'CCACHE_DIR': '/h', 'CCACHE_BASEDIR': '/s', 'CCACHE_MAXSIZE': '1G'}
+    listed = manylinux.docker_command(
+        'img', mounts={}, script='true', interactive=False, env=env, passthrough=['CCACHE_*']
+    )
+    forwarded = [listed[i + 1] for i, part in enumerate(listed) if part == '--env']
+    assert forwarded == ['CCACHE_MAXSIZE']
     assert cmd[cmd.index('--volume') + 1] == f'{tmp_path / "build"}:/work'
     assert f'{tmp_path / "src"}:/src' in cmd
     assert f'{tmp_path / "pv"}:/opt/pyvista-build-host/pyvista_build:ro' in cmd
@@ -1796,9 +1806,20 @@ def test_build_in_manylinux_dry_run(tmp_path: Path, mocker: MockerFixture):
     console = Console(record=True, width=4000, force_terminal=False)
     builder = Builder(_config(tmp_path, manylinux=None, interactive=True), console)
     builder.config.manylinux = 'img'
-    mocker.patch.object(builder, 'run')
+    real = phases.find_manifest
+    mocker.patch.object(
+        phases,
+        'find_manifest',
+        side_effect=lambda *a: replace(real(*a), manylinux_env=('DEMO_*',)),
+    )
+    builder.env.update({'DEMO_PGO': 'gen', 'DEMO': '1'})
+    run = mocker.patch.object(builder, 'run')
     assert builder.build() is None
     assert not probe.called
+    docker = run.call_args.args[0]
+    assert docker[0] == 'docker'
+    assert docker[docker.index('--env') + 1] == 'DEMO_PGO'
+    assert 'DEMO' not in docker
     out = console.export_text()
     assert 'Run the build in the container? (n stops) -> yes (dry run)' in out
     assert not (tmp_path / 'vtk-build').exists()
