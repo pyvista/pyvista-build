@@ -21,7 +21,9 @@ and `--manylinux` runs the build inside a manylinux container for a portable Lin
 Each backend describes its build in a `pyvista-build.toml` manifest at the root of its
 source tree. A manifest for stock VTK is shipped here, and `pyvista-build cvista` reads
 the one in the [cvista](https://github.com/pyvista/cvista) tree. Any other backend builds
-with `--url <git url>` or `--source <checkout>` when its tree carries a manifest.
+with `--url <git url>` or `--source <checkout>` when its tree carries a manifest. The
+[manifest reference](https://pyvista.github.io/pyvista-build/manifest.html) lists every
+key.
 
 The package depends on neither `vtk` nor `pyvista`, so it runs in an environment that
 has no VTK yet.
