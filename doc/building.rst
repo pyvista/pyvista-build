@@ -252,11 +252,12 @@ it short: a warm cache turns a build of hours into minutes.
   uploaded and downloaded on every run. A developer machine needs no cap.
 - The command already keys ``ccache`` entries on the compiler's version
   string rather than its binary's timestamp (``CCACHE_COMPILERCHECK``) and
-  on paths relative to the build (``CCACHE_BASEDIR``), and ignores the
-  ``__DATE__`` and ``__TIME__`` macros VTK bakes into a few files
-  (``CCACHE_SLOPPINESS``), so a runner image update that ships the same
-  compiler, or a job that checks out elsewhere, keeps the cache valid. Each
-  variable set in the environment beforehand wins over these defaults.
+  on paths relative to the build (``CCACHE_BASEDIR``), and leaves the
+  ``__DATE__`` and ``__TIME__`` macros, the locale variables and the
+  defines of precompiled headers out of the hash (``CCACHE_SLOPPINESS``),
+  so a runner image update that ships the same compiler, or a job that
+  checks out elsewhere, keeps the cache valid. Each variable set in the
+  environment beforehand wins over these defaults.
 - On Linux add ``--manylinux`` for a wheel that installs on other
   machines; the container installs ``ccache`` itself and uses the same
   directory.

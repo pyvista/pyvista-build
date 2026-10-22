@@ -67,8 +67,6 @@ if TYPE_CHECKING:
 STATE_FILENAME = '.pyvista-build.json'
 BuildType = Literal['Release', 'RelWithDebInfo', 'Debug']
 CompilerCache = Literal['auto', 'ccache', 'sccache', 'none']
-#: VTK bakes __DATE__ and __TIME__ into a few translation units.
-CCACHE_SLOPPINESS = 'time_macros,locale,pch_defines'
 BUILD_TYPES: tuple[str, ...] = get_args(BuildType)
 COMPILER_CACHES: tuple[str, ...] = get_args(CompilerCache)
 #: Tools-table names of the compiler.
@@ -1424,7 +1422,7 @@ class Builder:
             self.say(f'Compiler cache: [bold]{self.launcher.name}[/bold] in [bold]{where}[/bold]')
             self.env[var] = str(cache_dir)
         if self.launcher.name == 'ccache':
-            self.env.setdefault('CCACHE_SLOPPINESS', CCACHE_SLOPPINESS)
+            self.env.setdefault('CCACHE_SLOPPINESS', 'time_macros,locale,pch_defines')
             if cfg.os_name != 'windows':
                 self.env.setdefault('CCACHE_COMPILERCHECK', '%compiler% --version')
             try:
