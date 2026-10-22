@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from importlib.metadata import version as _metadata_version
 
-extensions = ['notfound.extension', 'sphinx_copybutton']
+extensions = [
+    'erbsland.sphinx.ansi',
+    'notfound.extension',
+    'sphinx_copybutton',
+    'sphinxcontrib.programoutput',
+]
+
+# Enable ANSI coloring for programoutput, using erbsland.sphinx.ansi
+programoutput_use_ansi = True
 
 source_suffix = '.rst'
 master_doc = 'index'
