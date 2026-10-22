@@ -1411,8 +1411,8 @@ def test_strip_wheel(tmp_path: Path, mocker: MockerFixture):
         ['strip', '-x'],
         ['codesign', '--force', '--sign', '-'],
     ]
-    assert [c[-1].rsplit('/', 2)[-2:] for c in calls] == [['demo', 'fast.so']] * 2 + [
-        ['demo', 'libdemo.dylib']
+    assert [Path(c[-1]).parts[-2:] for c in calls] == [('demo', 'fast.so')] * 2 + [
+        ('demo', 'libdemo.dylib')
     ] * 2
     assert not list(tmp_path.glob('*.strip'))
     with zipfile.ZipFile(wheel) as archive:
