@@ -68,6 +68,10 @@ BuildType = Literal['Release', 'RelWithDebInfo', 'Debug']
 CompilerCache = Literal['auto', 'ccache', 'sccache', 'none']
 BUILD_TYPES: tuple[str, ...] = get_args(BuildType)
 COMPILER_CACHES: tuple[str, ...] = get_args(CompilerCache)
+#: Tools-table names of the compiler.
+COMPILER_TOOLS = ('c++ compiler', 'msvc')
+#: Compiler output lines shown when the test program fails.
+COMPILER_ERROR_LINES = 6
 VERSION_SUFFIX_DEFINE = '-DVTK_VERSION_SUFFIX='
 DEFAULT_MACOS_TARGET = '11.0'
 
@@ -1259,7 +1263,13 @@ class Builder:
             ok = _tools.detect(tool, self.env)
             found = f'{tool.path} ({tool.version})' if tool.version else (tool.path or '-')
             found = escape(found)
-            if ok:
+            error = self._compiler_error(tool) if ok else None
+            if error is not None:
+                status = '[red]cannot link[/red]'
+                hint = _tools.compiler_link_instructions(cfg.os_name)
+                tool.instructions = f'cannot compile and link a test program.\n  {error}\n  {hint}'
+                blocking.append(tool)
+            elif ok:
                 status = '[green]ok[/green]'
             elif tool.pip:
                 status = (
@@ -1290,7 +1300,7 @@ class Builder:
             blocking.append(_tools.Tool(choice, (choice,), instructions=hint))
         if blocking:
             lines = [f'{t.name}: {t.instructions}' for t in blocking]
-            msg = 'Install these and run again:\n  ' + '\n  '.join(lines)
+            msg = 'Fix these and run again:\n  ' + '\n  '.join(lines)
             raise BuildError(msg)
 
         specs = [f'{t.pip}{t.spec}' for t in missing_pip] + missing_packages
@@ -1316,6 +1326,16 @@ class Builder:
                     msg = f'Still not usable after install: {", ".join(bad)}.'
                     raise BuildError(msg)
         self._activate_compiler_cache()
+
+    def _compiler_error(self, tool: _tools.Tool) -> str | None:
+        """Return why the found compiler cannot build a one-line program, if it cannot."""
+        if tool.name not in COMPILER_TOOLS or tool.path is None or self.config.dry_run:
+            return None
+        error = _tools.compiler_smoke_test(tool.path, self.config.os_name, self.env)
+        if error is None:
+            return None
+        lines = error.strip().splitlines()
+        return '\n  '.join(lines[-COMPILER_ERROR_LINES:])
 
     def _check_installer(self) -> None:
         """Raise when ``--install`` has no pip or uv to install the wheel with."""
@@ -1713,11 +1733,11 @@ class Builder:
             f'-DPython3_EXECUTABLE={self.python}',
             '-DPython3_FIND_STRATEGY=LOCATION',
         ]
-        launcher = self.launcher.name if self.launcher is not None else ''
-        cmd += [
-            f'-DCMAKE_C_COMPILER_LAUNCHER={launcher}',
-            f'-DCMAKE_CXX_COMPILER_LAUNCHER={launcher}',
-        ]
+        if self.launcher is not None:
+            cmd += [
+                f'-DCMAKE_C_COMPILER_LAUNCHER={self.launcher.name}',
+                f'-DCMAKE_CXX_COMPILER_LAUNCHER={self.launcher.name}',
+            ]
         cmd.append(f'{VERSION_SUFFIX_DEFINE}{self.version_suffix() or ""}')
         entries = cmake_entries(
             self.manifest, cfg.os_name, groups=self.groups, options=self.option_values
@@ -1844,7 +1864,12 @@ class Builder:
         table.add_column('Setting')
         table.add_column('Value')
         table.add_column('Flag')
-        launcher = self.launcher.name if self.launcher is not None else 'none'
+        if self.launcher is not None:
+            launcher = self.launcher.name
+        elif cfg.compiler_cache == 'none':
+            launcher = 'none'
+        else:
+            launcher = 'none (no ccache or sccache on PATH)'
         table.add_row('Build type', escape(cfg.build_type), '--build-type')
         table.add_row('Build tree', escape(short_path(cfg.cmake_dir)), '')
         table.add_row('Python', escape(short_path(self.python)), '')

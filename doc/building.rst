@@ -58,8 +58,11 @@ Ensure the tools the build needs are available.
 - Starting the build covers that whole list. ``--interactive`` asks again at
   this step, and ``--yes`` answers in advance. Without a terminal and without
   ``--yes`` the command stops instead of installing.
-- A missing compiler stops with instructions for your operating system. On
-  Windows, Visual Studio's build environment is imported automatically.
+- The compiler has to compile and link a one-line program. A missing or
+  broken one stops with instructions for your operating system, such as an
+  Xcode and Command Line Tools pair that no longer match after a macOS
+  update. On Windows, Visual Studio's build environment is imported
+  automatically.
 - A compiler cache (``ccache`` or ``sccache``) is used when one is on
   ``PATH``. ``--compiler-cache none`` builds without one.
 - When the cloned source asks for other ``cmake`` or ``ninja`` versions than
