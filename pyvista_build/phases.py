@@ -424,7 +424,7 @@ class Builder:
             Heading text.
 
         """
-        self.console.rule(f'[bold]{title}')
+        self.console.rule(f'[bold]{title}', style='magenta')
 
     def say(self, message: str) -> None:
         """Print a line of narration.

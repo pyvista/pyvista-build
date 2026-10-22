@@ -1385,7 +1385,13 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
         },
         script='true',
         interactive=True,
-        env={'CCACHE_MAXSIZE': '1G', 'CCACHE_DIR': '/h', 'PATH': '/bin', 'SCCACHE_DIR': '/x'},
+        env={
+            'CCACHE_MAXSIZE': '1G',
+            'CCACHE_DIR': '/h',
+            'FORCE_COLOR': '1',
+            'PATH': '/bin',
+            'SCCACHE_DIR': '/x',
+        },
     )
     assert cmd[:5] == ['docker', 'run', '--rm', '--init', '-i']
     assert '-t' in cmd
@@ -1393,7 +1399,8 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     assert f'{tmp_path / "src"}:/src' in cmd
     assert f'{tmp_path / "pv"}:/opt/pyvista-build-host/pyvista_build:ro' in cmd
     assert cmd[cmd.index('--env') : cmd.index('--env') + 2] == ['--env', 'CCACHE_MAXSIZE']
-    assert cmd.count('--env') == 1
+    assert cmd[cmd.index('FORCE_COLOR') - 1] == '--env'
+    assert cmd.count('--env') == 2
     assert cmd[-4:] == ['img', 'bash', '-c', 'true']
     mocker.patch.object(manylinux.os, 'getuid', return_value=501, create=True)
     mocker.patch.object(manylinux.os, 'getgid', return_value=20, create=True)
