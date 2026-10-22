@@ -2405,7 +2405,12 @@ class Builder:
         )
         mounts[package_mount] = _manylinux.package_dir()
         cmd = _manylinux.docker_command(
-            image, mounts=mounts, script=script, interactive=cfg.prompting, env=self.env
+            image,
+            mounts=mounts,
+            script=script,
+            interactive=cfg.prompting,
+            env=self.env,
+            passthrough=self.manifest.manylinux_env,
         )
         if not self.confirm('Run the build in the container? (n stops)'):
             msg = 'Stopped before the container build.'

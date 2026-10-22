@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 from importlib.metadata import requires
 import os
 from pathlib import Path
@@ -212,6 +213,7 @@ def docker_command(
     script: str,
     interactive: bool,
     env: Mapping[str, str],
+    passthrough: Sequence[str] = (),
 ) -> list[str]:
     """Assemble the ``docker run`` command.
 
@@ -232,6 +234,9 @@ def docker_command(
     env : Mapping[str, str]
         Host environment; its non-path ``CCACHE_*`` and ``SCCACHE_*`` settings pass through.
 
+    passthrough : Sequence[str]
+        Names or ``fnmatch`` patterns of further variables to pass through.
+
     Returns
     -------
     list[str]
@@ -246,7 +251,8 @@ def docker_command(
         cmd += ['--volume', f'{outside}:{inside}{mode}']
     for name in sorted(env):
         cache = name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS
-        if cache or name in COLOR_VARS:
+        listed = any(fnmatch.fnmatchcase(name, pattern) for pattern in passthrough)
+        if cache or listed or name in COLOR_VARS:
             cmd += ['--env', name]
     if SUMMARY in mounts:
         cmd += ['--env', f'GITHUB_STEP_SUMMARY={SUMMARY}']

@@ -214,11 +214,17 @@ Exactly one of ``cmake`` and ``env`` is set.
     before configuring, such as the X11 and GL development headers VTK's
     rendering modules need. The manylinux images are AlmaLinux based, so
     the names are the RPM ones.
+``env``
+    Environment variables ``--manylinux`` passes from the host into the
+    container, by name or ``fnmatch`` pattern, for build knobs that are
+    not manifest options. The ``CCACHE_*`` and ``SCCACHE_*`` settings and
+    the terminal color variables go in without being listed.
 
 .. code-block:: toml
 
     [manylinux]
     packages = ["libX11-devel", "libXcursor-devel", "mesa-libGL-devel"]
+    env = ["CVISTA_*"]
 
 ``[repair]``
 ------------

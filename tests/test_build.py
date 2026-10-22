@@ -1505,9 +1505,11 @@ def test_manifest_manylinux_packages(tmp_path: Path):
     path.write_text(
         'manifest_version = 1\n'
         '[backend]\nname = "demo"\ndefault_ref = "v1"\n'
-        '[manylinux]\npackages = ["libX11-devel"]\n'
+        '[manylinux]\npackages = ["libX11-devel"]\nenv = ["DEMO_*", "TAG"]\n'
     )
-    assert load_manifest(path).manylinux_packages == ('libX11-devel',)
+    manifest = load_manifest(path)
+    assert manifest.manylinux_packages == ('libX11-devel',)
+    assert manifest.manylinux_env == ('DEMO_*', 'TAG')
     path.write_text(
         'manifest_version = 1\nmanylinux = 1\n[backend]\nname = "demo"\ndefault_ref = "v1"\n'
     )
@@ -1598,6 +1600,14 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     )
     assert cmd[:5] == ['docker', 'run', '--rm', '--init', '-i']
     assert '-t' in cmd
+    env = {'DEMO_PGO': 'gen', 'DEMO': '1', 'TAG': 'x', 'PATH': '/bin', 'OTHER': '2'}
+    listed = manylinux.docker_command(
+        'img', mounts={}, script='true', interactive=False, env=env, passthrough=['DEMO_*', 'TAG']
+    )
+    assert [listed[i + 1] for i, part in enumerate(listed) if part == '--env'] == [
+        'DEMO_PGO',
+        'TAG',
+    ]
     assert cmd[cmd.index('--volume') + 1] == f'{tmp_path / "build"}:/work'
     assert f'{tmp_path / "src"}:/src' in cmd
     assert f'{tmp_path / "pv"}:/opt/pyvista-build-host/pyvista_build:ro' in cmd
