@@ -84,6 +84,7 @@ def no_tools(mocker: MockerFixture):
     mocker.patch.object(tools, 'executable_version', return_value='99.0')
     mocker.patch.object(tools, 'python_build_packages', return_value=[])
     mocker.patch.object(tools, 'command_succeeds', return_value=True)
+    mocker.patch.object(tools, 'compiler_smoke_test', return_value=None)
 
 
 @pytest.mark.usefixtures('no_tools')
@@ -144,7 +145,7 @@ def test_dry_run_flags(tmp_path: Path):
     Builder(cfg, console).build()
     out = console.export_text()
     assert 'Compiler cache: none' not in out.splitlines()
-    assert '-DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER= ' in out
+    assert 'COMPILER_LAUNCHER' not in out
     assert '-DCMAKE_BUILD_TYPE=Debug' in out
     assert '--parallel 3' in out
     assert '-DVTK_GROUP_ENABLE_Rendering=NO' in out
@@ -1272,6 +1273,29 @@ def test_wheel_env_and_repair_command(tmp_path: Path, mocker: MockerFixture, os_
     assert repairer[os_name] not in [
         t.name for t in tools.required_tools(os_name, {}, repair=False)
     ]
+
+
+@pytest.mark.parametrize('os_name', OS_NAMES)
+def test_compiler_cannot_link(tmp_path: Path, mocker: MockerFixture, os_name: str):
+    """A compiler that fails to build the test program stops with its last lines and a hint."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    mocker.patch.object(tools, 'executable_version', return_value='99.0')
+    mocker.patch.object(tools, 'python_build_packages', return_value=[])
+    mocker.patch.object(tools, 'command_succeeds', return_value=True)
+    error = '\n'.join(f'line {i}' for i in range(10)) + '\nld: tapi error: malformed file\n'
+    smoke = mocker.patch.object(tools, 'compiler_smoke_test', return_value=error)
+    builder = _builder(tmp_path, mocker, os_name=os_name)
+    hint = re.escape(tools.compiler_link_instructions(os_name))
+    with pytest.raises(BuildError, match=f'line 5\n(.*\n)*.*tapi error.*\n  {hint}') as info:
+        builder.phase_tools()
+    assert 'line 4' not in str(info.value)
+    compiler = 'cl' if os_name == 'windows' else 'c++'
+    assert smoke.call_args.args[:2] == (f'/usr/bin/{compiler}', os_name)
+    assert 'cannot link' in builder.console.export_text()
+    smoke.reset_mock()
+    builder.config.dry_run = True
+    builder.phase_tools()
+    assert not smoke.called
 
 
 def test_compiler_cache_tool_missing(mocker: MockerFixture):

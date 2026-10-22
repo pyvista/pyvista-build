@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from typing import TYPE_CHECKING
 
 from packaging.specifiers import SpecifierSet
@@ -314,6 +315,77 @@ def compiler_instructions(os_name: str) -> str:
         'sudo apt install build-essential libgl1-mesa-dev libx11-dev libxcursor-dev '
         'or sudo dnf install gcc-c++ mesa-libGL-devel libX11-devel libXcursor-devel'
     )
+
+
+def compiler_smoke_test(
+    compiler: str, os_name: str, env: Mapping[str, str] | None = None
+) -> str | None:
+    """Compile and link a one-line program with ``compiler``.
+
+    Parameters
+    ----------
+    compiler : str
+        Compiler executable.
+
+    os_name : str
+        Operating system name; MSVC takes its own flags.
+
+    env : Mapping[str, str], optional
+        Environment to run it in. Defaults to the process environment.
+
+    Returns
+    -------
+    str or None
+        The compiler's output when it fails, ``None`` when the program links.
+
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / 'smoke.cpp'
+        src.write_text('int main() { return 0; }\n', encoding='utf-8')
+        if os_name == 'windows':
+            cmd = [compiler, '/nologo', '/EHsc', str(src), f'/Fe:{Path(tmp) / "smoke.exe"}']
+        else:
+            cmd = [compiler, str(src), '-o', str(Path(tmp) / 'smoke')]
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=tmp,
+                env=None if env is None else dict(env),
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as err:
+            return str(err)
+        if result.returncode == 0:
+            return None
+        out = (result.stderr or result.stdout).strip()
+        return out or f'exit status {result.returncode}'
+
+
+def compiler_link_instructions(os_name: str) -> str:
+    """Return what to do when the compiler is found but cannot link a program.
+
+    Parameters
+    ----------
+    os_name : str
+        Operating system name.
+
+    Returns
+    -------
+    str
+        Instructions.
+
+    """
+    if os_name == 'macos':
+        return (
+            'Xcode and the Command Line Tools are usually out of step after a macOS '
+            'update. Update Xcode, or build with its SDK: '
+            'export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)", or switch to the '
+            'Command Line Tools: sudo xcode-select -s /Library/Developer/CommandLineTools'
+        )
+    return compiler_instructions(os_name)
 
 
 #: Wheel repair executable on each operating system.

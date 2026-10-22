@@ -10,12 +10,12 @@ import tomllib
 from typing import TYPE_CHECKING
 
 from packaging.requirements import Requirement
+import pytest
 
 from pyvista_build import tools
 from pyvista_build.manifest import OS_NAMES
 
 if TYPE_CHECKING:
-    import pytest
     from pytest_mock import MockerFixture
 
 
@@ -151,6 +151,47 @@ def test_detect_check_and_version(mocker: MockerFixture):
     assert cmake.version == '3.20.0'
     version.return_value = '3.30.1'
     assert tools.detect(cmake)
+
+
+@pytest.fixture
+def _no_host_compiler():
+    """Keep the real smoke test in the tools tests, with ``subprocess.run`` mocked."""
+
+
+@pytest.mark.parametrize('os_name', OS_NAMES)
+def test_compiler_smoke_test(mocker: MockerFixture, os_name: str):
+    """A one-line program is compiled and linked; the compiler's output is returned on failure."""
+    run = mocker.patch.object(
+        tools.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)
+    )
+    assert tools.compiler_smoke_test('cl' if os_name == 'windows' else 'c++', os_name) is None
+    cmd = run.call_args.args[0]
+    source = Path(cmd[3] if os_name == 'windows' else cmd[1])
+    assert source.name == 'smoke.cpp'
+    assert not source.exists()
+    if os_name == 'windows':
+        assert cmd[:3] == ['cl', '/nologo', '/EHsc']
+        assert cmd[4].startswith('/Fe:')
+    else:
+        assert cmd[2] == '-o'
+    assert run.call_args.kwargs['cwd'] == str(source.parent)
+    assert run.call_args.kwargs['env'] is None
+    run.return_value = subprocess.CompletedProcess([], 1, stdout='', stderr='ld: tapi error\n')
+    assert tools.compiler_smoke_test('c++', os_name, {'PATH': '/x'}) == 'ld: tapi error'
+    assert run.call_args.kwargs['env'] == {'PATH': '/x'}
+    run.return_value = subprocess.CompletedProcess([], 1, stdout='bad\n', stderr='')
+    assert tools.compiler_smoke_test('c++', os_name) == 'bad'
+    run.return_value = subprocess.CompletedProcess([], 3, stdout='', stderr='')
+    assert tools.compiler_smoke_test('c++', os_name) == 'exit status 3'
+    run.side_effect = subprocess.TimeoutExpired(['c++'], 120)
+    assert 'timed out' in str(tools.compiler_smoke_test('c++', os_name))
+
+
+def test_compiler_link_instructions():
+    """MacOS names the SDK mismatch; the others repeat how to install a compiler."""
+    assert 'SDKROOT' in tools.compiler_link_instructions('macos')
+    for os_name in ('linux', 'windows'):
+        assert tools.compiler_link_instructions(os_name) == tools.compiler_instructions(os_name)
 
 
 def test_which_and_command_succeeds(tmp_path: Path):

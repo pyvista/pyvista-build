@@ -189,7 +189,7 @@ def test_interactive_configure_flags(tmp_path: Path, mocker: MockerFixture):
     assert '-DCMAKE_BUILD_TYPE=Debug' in cmd
     assert '-DVTK_VERSION_SUFFIX=' in cmd
     assert cmd[-2:] == ['-DX=2', '-DY=3']
-    assert '-DCMAKE_C_COMPILER_LAUNCHER=' in cmd
+    assert not any(a.startswith('-DCMAKE_C_COMPILER_LAUNCHER') for a in cmd)
     assert builder.launcher is None
     assert builder.config.compiler_cache == 'none'
     assert 'CCACHE_BASEDIR' not in builder.env
@@ -406,13 +406,20 @@ def test_configure_table_lists_only_prompt_flags(tmp_path: Path, mocker: MockerF
     """Every flag in the configure table is one the configure prompt accepts."""
     console = Console(record=True, width=4000, force_terminal=False)
     build_dir = tmp_path / 'm[red]x[/red]y'
-    builder = Builder(_config(tmp_path, build_dir=build_dir, version_suffix='[b]q'), console)
+    cfg = _config(tmp_path, build_dir=build_dir, version_suffix='[b]q', compiler_cache='auto')
+    builder = Builder(cfg, console)
     builder._manifest = phases.find_manifest('vtk', None)
     printed = mocker.spy(builder.console, 'print')
     builder._print_configure_settings()
     out = console.export_text()
     assert str(build_dir / 'build') in out
     assert '[b]q' in out
+    assert 'none (no ccache or sccache on PATH)' in out
+    builder.config.compiler_cache = 'none'
+    builder._print_configure_settings()
+    again = console.export_text()
+    assert ' none ' in again
+    assert 'no ccache' not in again
     flags = [str(cell) for cell in printed.call_args.args[0].columns[2]._cells if str(cell)]
     assert '--build-dir' not in flags
     errors = []
