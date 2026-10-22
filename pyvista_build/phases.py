@@ -424,7 +424,7 @@ class Builder:
             Heading text.
 
         """
-        self.console.rule(f'[bold]{title}')
+        self.console.rule(f'[bold]{title}', style='magenta')
 
     def say(self, message: str) -> None:
         """Print a line of narration.
@@ -900,6 +900,11 @@ class Builder:
         return self.interpreter.executable
 
     @property
+    def _pip_args(self) -> tuple[str, ...]:  # numpydoc ignore=RT01
+        """Installer arguments: the container runs pip as root, which pip warns about."""
+        return ('--root-user-action=ignore',) if self.config.in_container else ()
+
+    @property
     def prefix(self) -> str:  # numpydoc ignore=RT01
         """Environment the wheel and the build packages are installed into."""
         return self.interpreter.prefix
@@ -982,7 +987,8 @@ class Builder:
     def phase_source(self) -> None:
         """Clone or reuse the checkout, then load its manifest."""
         cfg = self.config
-        self.step('2/8 Source')
+        on_host = cfg.manylinux and not cfg.in_container
+        self.step('Source (on this machine)' if on_host else '2/8 Source')
         git = _tools.git_tool()
         if not _tools.detect(git, self.env):
             msg = f'git was not found on PATH. {git.instructions}'
@@ -1060,6 +1066,8 @@ class Builder:
         cfg = self.config
         source = cfg.src_dir if cfg.src_dir.exists() else None
         self._manifest = find_manifest(cfg.backend, source)
+        if cfg.in_container:
+            return
         manifest = self.manifest.path
         shown = short_path(manifest) if manifest is not None else str(manifest)
         self.say(f'Manifest: [bold]{escape(shown)}[/bold]')
@@ -1284,7 +1292,11 @@ class Builder:
             raise BuildError(msg)
 
         specs = [f'{t.pip}{t.spec}' for t in missing_pip] + missing_packages
-        cmd = _tools.pip_install_command(*specs, python=self.interpreter) if specs else None
+        cmd = (
+            _tools.pip_install_command(*specs, args=self._pip_args, python=self.interpreter)
+            if specs
+            else None
+        )
         if specs and cmd is None:
             msg = (
                 f'Install {", ".join(specs)} into {short_path(self.prefix)} and run again '
@@ -1417,7 +1429,7 @@ class Builder:
         if not missing:
             return
         wanted = [f'{t.pip}{t.spec}' for t in missing]
-        cmd = _tools.pip_install_command(*wanted, python=self.interpreter)
+        cmd = _tools.pip_install_command(*wanted, args=self._pip_args, python=self.interpreter)
         if cmd is None:
             msg = (
                 f'Install {", ".join(wanted)} into {short_path(self.prefix)} and run again '
@@ -1938,8 +1950,27 @@ class Builder:
             log=cfg.build_dir / 'build.log',
         )
         if self.launcher is not None:
-            self.run([self.launcher.name, '--show-stats'], fatal=False, passthrough=True)
+            self._cache_stats()
         self.hooks('post_build')
+
+    def _cache_stats(self) -> None:
+        """Print the compiler cache statistics, and add them to the GitHub job summary when set."""
+        assert self.launcher is not None
+        cmd = [self.launcher.name, '--show-stats']
+        summary = self.env.get('GITHUB_STEP_SUMMARY')
+        if not summary or self.config.dry_run:
+            self.run(cmd, fatal=False, passthrough=True)
+            return
+        self.say(f'[cyan]$ {escape(_display_command(cmd, self.env))}[/cyan]')
+        try:
+            stats = subprocess.run(cmd, env=self.env, capture_output=True, text=True, check=False)
+        except OSError as exc:
+            self.say(f'[red]{escape(str(exc))}[/red]')
+            return
+        text = stats.stdout.rstrip()
+        self.console.out(text, highlight=False)
+        with Path(summary).open('a', encoding='utf-8') as handle:
+            handle.write(f'## {self.launcher.name}\n```\n{text}\n```\n')
 
     def _jobs(self) -> tuple[int, int, int | None]:
         """Return the job count, the CPU cores and the physical memory it was chosen from."""
@@ -2210,6 +2241,9 @@ class Builder:
             self._check_installer()
             self.confirm_installs(self.install_plan([]))
         mounts: dict[str, Path] = {_manylinux.WORK: cfg.build_dir, _manylinux.SOURCE: cfg.src_dir}
+        summary = self.env.get('GITHUB_STEP_SUMMARY')
+        if summary and Path(summary).is_file():
+            mounts[_manylinux.SUMMARY] = Path(summary)
         if cfg.compiler_cache != 'none':
             cache_dir = self.compiler_cache_dir('CCACHE_DIR')
             mounts[_manylinux.CACHE] = cache_dir or cfg.build_dir / 'compiler-cache'
@@ -2235,7 +2269,7 @@ class Builder:
             raise BuildError(msg)
         if not cfg.dry_run:
             for inside, folder in mounts.items():
-                if inside != package_mount:
+                if inside not in (package_mount, _manylinux.SUMMARY):
                     folder.mkdir(parents=True, exist_ok=True)
         started = time.time()
         self.run(cmd, passthrough=True)

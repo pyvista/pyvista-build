@@ -23,6 +23,7 @@ WORK = '/work'
 SOURCE = '/src'
 CACHE = '/cache'
 PACKAGE_ROOT = '/opt/pyvista-build-host'
+SUMMARY = '/github-step-summary.md'
 PIP_CACHE = f'{WORK}/pip-cache'
 CCACHE_VERSION = '4.14'
 CCACHE_SHA256 = {
@@ -33,6 +34,8 @@ DOCKER_INSTRUCTIONS = 'Install Docker: https://docs.docker.com/get-docker/'
 _HOST_PATH_VARS = frozenset(
     {'CCACHE_BASEDIR', 'CCACHE_CONFIGPATH', 'CCACHE_DIR', 'CCACHE_LOGFILE', 'SCCACHE_DIR'}
 )
+#: Terminal color settings the build inside the container follows as well.
+COLOR_VARS = ('FORCE_COLOR', 'NO_COLOR', 'TERM', 'COLUMNS')
 
 
 def host_arch() -> str:
@@ -161,6 +164,7 @@ def container_script(
         'if ! test -x "$PY"; then echo "$PY is not in this image" >&2; exit 1; fi',
         "git config --global --add safe.directory '*'",
         f'export PIP_CACHE_DIR={PIP_CACHE}',
+        'mkdir -p "$PIP_CACHE_DIR" && chown "$(id -u):$(id -g)" "$PIP_CACHE_DIR"',
     ]
     if packages:
         pkgs = ' '.join(shlex.quote(p) for p in packages)
@@ -229,8 +233,11 @@ def docker_command(
         mode = ':ro' if inside.startswith(PACKAGE_ROOT) else ''
         cmd += ['--volume', f'{outside}:{inside}{mode}']
     for name in sorted(env):
-        if name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS:
+        cache = name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS
+        if cache or name in COLOR_VARS:
             cmd += ['--env', name]
+    if SUMMARY in mounts:
+        cmd += ['--env', f'GITHUB_STEP_SUMMARY={SUMMARY}']
     cmd += ['--workdir', WORK, image, 'bash', '-c', script]
     return cmd
 

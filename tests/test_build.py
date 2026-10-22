@@ -218,6 +218,27 @@ def test_pip_tools_offered(tmp_path: Path, mocker: MockerFixture):
     assert f'$ {phases._join(["pip", "install", "cmake>=3.22", "auditwheel", "wheel"])}' in out
 
 
+def test_container_pip_installs_as_root(tmp_path: Path, mocker: MockerFixture):
+    """Inside the container pip is told it runs as root, and the manifest line is the host's."""
+    mocker.patch.object(
+        tools.shutil, 'which', side_effect=lambda name, **_: None if name == 'cmake' else '/u/x'
+    )
+    mocker.patch.object(tools, 'executable_version', return_value='99.0')
+    mocker.patch.object(tools, 'python_build_packages', return_value=[])
+    mocker.patch.object(
+        tools,
+        'pip_install_command',
+        side_effect=lambda *s, args=(), **_: ['pip', 'install', *args, *s],
+    )
+    console = Console(record=True, width=4000, force_terminal=False)
+    Builder(_config(tmp_path, in_container=True), console).build()
+    out = console.export_text()
+    assert (
+        f'$ {phases._join(["pip", "install", "--root-user-action=ignore", "cmake>=3.22"])}' in out
+    )
+    assert 'Manifest:' not in out
+
+
 def test_too_old_tool(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
     mocker.patch.object(tools, 'executable_version', return_value='3.10')
@@ -1333,6 +1354,7 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     assert 'dnf install -y --setopt=install_weak_deps=False a-devel b' in script
     assert "git config --global --add safe.directory '*'" in script
     assert 'export PIP_CACHE_DIR=/work/pip-cache' in lines
+    assert 'mkdir -p "$PIP_CACHE_DIR" && chown "$(id -u):$(id -g)" "$PIP_CACHE_DIR"' in lines
     assert 'yum install -y a-devel b' in script
     assert 'ccache-4.14-linux-$ARCH-musl-static' in script
     for arch, sha in manylinux.CCACHE_SHA256.items():
@@ -1353,7 +1375,7 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     )
     assert 'dnf' not in script
     assert 'ccache' not in script
-    assert 'chown' not in script
+    assert "trap 'chown" not in script
     cmd = manylinux.docker_command(
         'img',
         mounts={
@@ -1363,7 +1385,13 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
         },
         script='true',
         interactive=True,
-        env={'CCACHE_MAXSIZE': '1G', 'CCACHE_DIR': '/h', 'PATH': '/bin', 'SCCACHE_DIR': '/x'},
+        env={
+            'CCACHE_MAXSIZE': '1G',
+            'CCACHE_DIR': '/h',
+            'FORCE_COLOR': '1',
+            'PATH': '/bin',
+            'SCCACHE_DIR': '/x',
+        },
     )
     assert cmd[:5] == ['docker', 'run', '--rm', '--init', '-i']
     assert '-t' in cmd
@@ -1371,7 +1399,8 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     assert f'{tmp_path / "src"}:/src' in cmd
     assert f'{tmp_path / "pv"}:/opt/pyvista-build-host/pyvista_build:ro' in cmd
     assert cmd[cmd.index('--env') : cmd.index('--env') + 2] == ['--env', 'CCACHE_MAXSIZE']
-    assert cmd.count('--env') == 1
+    assert cmd[cmd.index('FORCE_COLOR') - 1] == '--env'
+    assert cmd.count('--env') == 2
     assert cmd[-4:] == ['img', 'bash', '-c', 'true']
     mocker.patch.object(manylinux.os, 'getuid', return_value=501, create=True)
     mocker.patch.object(manylinux.os, 'getgid', return_value=20, create=True)
@@ -1465,7 +1494,8 @@ def test_build_in_manylinux(tmp_path: Path, mocker: MockerFixture):
     out = console.export_text()
     assert f'  • the vtk wheel into {phases.short_path(sys.prefix)}, once it is built' in out
     plan = out.index('The build runs these eight steps:')
-    assert plan < out.index('Build tree and wheel go in') < out.index('2/8 Source')
+    assert plan < out.index('Build tree and wheel go in') < out.index('Source (on this machine)')
+    assert '2/8 Source' not in out
     assert f'6. Wheel: package the wheel with setup.py bdist_wheel into {cfg.dist_dir}' in out
     assert out.count('The build runs these eight steps:') == 1
     assert 'Done' in out
@@ -2225,3 +2255,86 @@ def test_item_hanging_indent(tmp_path: Path):
     build = Builder(_config(tmp_path), console=Console(file=out, width=30))
     build.item('1.', 'Tools: check git, cmake, ninja and a compiler')
     assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
+
+
+def test_cache_stats_in_job_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """The statistics are printed and appended to GITHUB_STEP_SUMMARY when it is set."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    summary = tmp_path / 'summary.md'
+    summary.write_text('# before\n')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    run = mocker.patch.object(
+        phases.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, 'Hits: 3\n', '')
+    )
+    builder._cache_stats()
+    assert run.call_args.args[0] == ['ccache', '--show-stats']
+    assert 'Hits: 3' in builder.console.export_text()
+    assert summary.read_text() == '# before\n## ccache\n```\nHits: 3\n```\n'
+
+
+def test_cache_stats_tool_missing(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """A cache tool that cannot start is reported and the summary is left alone."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    summary = tmp_path / 'summary.md'
+    summary.write_text('# before\n')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    mocker.patch.object(phases.subprocess, 'run', side_effect=OSError('gone'))
+    builder._cache_stats()
+    assert 'gone' in builder.console.export_text()
+    assert summary.read_text() == '# before\n'
+
+
+def test_cache_stats_without_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """Without GITHUB_STEP_SUMMARY the statistics are only printed."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    monkeypatch.delenv('GITHUB_STEP_SUMMARY', raising=False)
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    run = mocker.patch.object(builder, 'run')
+    builder._cache_stats()
+    assert run.call_args.args[0] == ['ccache', '--show-stats']
+
+
+def test_container_mounts_job_summary(tmp_path: Path):
+    """The summary file is mounted into the container and named by GITHUB_STEP_SUMMARY."""
+    summary = tmp_path / 'summary.md'
+    mounts = {manylinux.WORK: tmp_path, manylinux.SUMMARY: summary}
+    cmd = manylinux.docker_command('img', mounts=mounts, script='true', interactive=False, env={})
+    assert f'{summary}:{manylinux.SUMMARY}' in cmd
+    assert f'GITHUB_STEP_SUMMARY={manylinux.SUMMARY}' in cmd
+    cmd = manylinux.docker_command(
+        'img', mounts={manylinux.WORK: tmp_path}, script='true', interactive=False, env={}
+    )
+    assert not any('GITHUB_STEP_SUMMARY' in part for part in cmd)
+
+
+def test_build_in_manylinux_mounts_job_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """A container build mounts the summary file as a file, not as a created directory."""
+    mocker.patch.object(phases.time, 'time', return_value=1000.0)
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    mocker.patch.object(manylinux, 'package_dir', return_value=tmp_path / 'pv')
+    mocker.patch.object(manylinux, 'requirements', return_value=['numpy'])
+    mocker.patch.object(manylinux, 'file_owner', return_value='7:7')
+    mocker.patch.object(
+        subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout='')
+    )
+    summary = tmp_path / 'summary.md'
+    summary.write_text('')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    src = tmp_path / 'src'
+    (src / '.git').mkdir(parents=True)
+    cfg = _config(tmp_path, dry_run=False, manylinux='img', source=src, repair=False, yes=True)
+    builder = Builder(cfg, Console(record=True, width=4000, force_terminal=False))
+    run = mocker.patch.object(builder, 'run')
+    mocker.patch.object(builder, 'phase_install')
+    cfg.dist_dir.mkdir(parents=True)
+    wheel = cfg.dist_dir / 'vtk-9.7.0-cp314-cp314-linux_x86_64.whl'
+    wheel.write_text('')
+    os.utime(wheel, (1500.0, 1500.0))
+    builder.build()
+    assert f'{summary}:{manylinux.SUMMARY}' in run.call_args.args[0]
+    assert summary.is_file()

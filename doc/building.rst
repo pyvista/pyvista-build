@@ -209,20 +209,36 @@ A CI job builds from scratch every time, so a compiler cache is what keeps
 it short: a warm cache turns a build of hours into minutes.
 
 - Pass ``--yes`` and ``--verbose``, as in `Scripted Use`_.
+- ``pip install pyvista-build[tools]`` installs every tool the build gets
+  from PyPI up front, so the tools step has nothing left to install.
 - ``--compiler-cache auto`` uses ``ccache`` or ``sccache``, whichever is on
   ``PATH``. Install ``ccache`` on Linux and macOS (``apt-get install ccache``,
   ``brew install ccache``) and set up ``sccache`` on Windows, where MSVC
   needs it (`mozilla-actions/sccache-action
   <https://github.com/mozilla-actions/sccache-action>`_).
 - ``--cache-dir`` puts the cache in a directory the job can save and restore
-  between runs. Cap its size with ``CCACHE_MAXSIZE`` or
-  ``SCCACHE_CACHE_SIZE``; 1 GB holds a full VTK build.
-- Save that directory at the end of the job and restore it at the start.
-  Keep the cache per operating system: object files from one do not help
-  another.
+  between runs. Save it at the end of the job and restore it at the start,
+  one cache per operating system: object files from one do not help another.
+- The cache tools read their own environment variables, and the command
+  passes every ``CCACHE_*`` and ``SCCACHE_*`` setting through to the build
+  and into the manylinux container, along with ``FORCE_COLOR``, ``NO_COLOR``,
+  ``TERM`` and ``COLUMNS`` so the container's output is colored and wrapped
+  like the host's. Set ``FORCE_COLOR=1`` in a job to keep the colors in its
+  log. ``CCACHE_MAXSIZE=1G`` or
+  ``SCCACHE_CACHE_SIZE=1G`` is the one worth setting in a job: the defaults
+  are 5 GB and 10 GB, a full VTK build fits in 1 GB, and the cache is
+  uploaded and downloaded on every run. A developer machine needs no cap.
+- The command already keys ``ccache`` entries on the compiler's version
+  string rather than its binary's timestamp (``CCACHE_COMPILERCHECK``) and
+  on paths relative to the build (``CCACHE_BASEDIR``), so a runner image
+  update that ships the same compiler, or a job that checks out elsewhere,
+  keeps the cache valid.
 - On Linux add ``--manylinux`` for a wheel that installs on other
   machines; the container installs ``ccache`` itself and uses the same
   directory.
+- The cache statistics are printed after the build and, on GitHub Actions,
+  written to the job summary (``GITHUB_STEP_SUMMARY``), from inside the
+  container as well.
 
 .. code-block:: bash
 
@@ -231,7 +247,7 @@ it short: a warm cache turns a build of hours into minutes.
 `This repository's own workflow
 <https://github.com/pyvista/pyvista-build/blob/main/.github/workflows/build-vtk.yml>`_
 does this on all three operating systems, keeping the cache as a workflow
-artifact and printing ``ccache --show-stats`` in the job summary. A full
+artifact. A full
 hit rate finishes in about 10 minutes on Linux, 25 on macOS, and 35 on
 Windows.
 
@@ -334,7 +350,9 @@ Caches and limits:
 
 Tooling
 ~~~~~~~
-What the command looks for and offers to install:
+What the command looks for and offers to install. The ``tools`` extra
+(``pip install pyvista-build[tools]``) installs every PyPI one up front,
+here or in CI:
 
 - `git <https://git-scm.com/>`_ clones the source and checks out the
   requested tag, branch, or commit. Never installed by the command.
