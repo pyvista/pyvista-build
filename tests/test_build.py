@@ -1956,6 +1956,7 @@ def test_ccache_basedir(tmp_path: Path, mocker: MockerFixture):
     assert 'CCACHE_DIR' not in builder.env
     assert 'Compiler cache: ccache in its default location' in builder.console.export_text()
     assert builder.env['CCACHE_COMPILERCHECK'] == '%compiler% --version'
+    assert builder.env['CCACHE_SLOPPINESS'] == 'time_macros,locale,pch_defines'
     builder = _builder(tmp_path, mocker, compiler_cache='ccache', source=tmp_path.parents[-1])
     builder._activate_compiler_cache()
     assert 'CCACHE_BASEDIR' not in builder.env
@@ -1965,10 +1966,12 @@ def test_ccache_basedir(tmp_path: Path, mocker: MockerFixture):
 def test_cache_dir_precedence(tmp_path: Path, mocker: MockerFixture, monkeypatch, choice, var):
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
     monkeypatch.setenv(var, str(tmp_path / 'mine'))
+    monkeypatch.setenv('CCACHE_SLOPPINESS', 'locale')
     builder = _builder(tmp_path, mocker, compiler_cache=choice, os_name='windows')
     builder._activate_compiler_cache()
     assert builder.env[var] == str(tmp_path / 'mine')
     assert 'CCACHE_COMPILERCHECK' not in builder.env
+    assert builder.env['CCACHE_SLOPPINESS'] == 'locale'
     builder = _builder(tmp_path, mocker, compiler_cache=choice, cache_dir=tmp_path / 'flag')
     builder._activate_compiler_cache()
     assert builder.env[var] == str(tmp_path / 'flag')
