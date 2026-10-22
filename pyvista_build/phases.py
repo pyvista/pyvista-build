@@ -185,6 +185,41 @@ def _lf(line: str) -> str:
     return line[:-2] + '\n' if line.endswith('\r\n') else line
 
 
+def parse_cache_counts(name: str, text: str) -> tuple[int, int] | None:
+    """Return the cumulative (hits, misses) a compiler cache reports, or None when unreadable.
+
+    Parameters
+    ----------
+    name : str
+        ``'ccache'`` (``--print-stats`` output) or ``'sccache'`` (``--show-stats`` output).
+
+    text : str
+        The tool's output.
+
+    Returns
+    -------
+    tuple[int, int] | None
+        Hits and misses.
+
+    """
+    counts: dict[str, int] = {}
+    for line in text.splitlines():
+        if name == 'ccache':
+            key, _, value = line.partition('\t')
+        else:
+            key, _, value = line.rpartition(' ')
+            key = key.strip().lower().replace(' ', '_')
+        if value.strip().isdigit():
+            counts[key] = int(value)
+    hit_keys = (
+        ('direct_cache_hit', 'preprocessed_cache_hit') if name == 'ccache' else ('cache_hits',)
+    )
+    miss_key = 'cache_miss' if name == 'ccache' else 'cache_misses'
+    if miss_key not in counts or not all(k in counts for k in hit_keys):
+        return None
+    return sum(counts[k] for k in hit_keys), counts[miss_key]
+
+
 def _wheel_fingerprint(wheel: Path, cmd: Sequence[str]) -> str:
     """Return a hash of the repair command and each file's name, checksum, and size in a wheel."""
     with zipfile.ZipFile(wheel) as archive:
@@ -1978,17 +2013,59 @@ class Builder:
             'A full VTK build takes tens of minutes to hours.'
         )
         jobs = self._ask_jobs(jobs)
+        before = self._cache_counts()
         self.run(
             ['cmake', '--build', str(cfg.cmake_dir), '--parallel', str(jobs)],
             env=self.configure_env(),
             log=cfg.build_dir / 'build.log',
         )
         if self.launcher is not None:
-            self._cache_stats()
+            self._cache_stats(self._cache_delta(before))
         self.hooks('post_build')
 
-    def _cache_stats(self) -> None:
-        """Print the compiler cache statistics, and add them to the GitHub job summary when set."""
+    def _cache_counts(self) -> tuple[int, int] | None:
+        """Return the compiler cache's cumulative (hits, misses), or None when unavailable."""
+        if self.launcher is None or self.config.dry_run:
+            return None
+        flag = '--print-stats' if self.launcher.name == 'ccache' else '--show-stats'
+        try:
+            stats = subprocess.run(
+                [self.launcher.name, flag],
+                env=self.env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return None
+        if stats.returncode != 0:
+            return None
+        return parse_cache_counts(self.launcher.name, stats.stdout)
+
+    def _cache_delta(self, before: tuple[int, int] | None) -> str | None:
+        """Say how many compilations this run hit and missed the compiler cache, and return it."""
+        after = self._cache_counts()
+        if before is None or after is None:
+            return None
+        hits, misses = after[0] - before[0], after[1] - before[1]
+        if hits < 0 or misses < 0:
+            return None
+        if hits + misses == 0:
+            line = (
+                'Compiler cache: no cacheable compilation ran this run, so the statistics '
+                'below are unchanged from earlier builds.'
+            )
+        else:
+            share = 100 * hits / (hits + misses)
+            line = (
+                f'Compiler cache this run: {hits} hits, {misses} misses ({share:.1f}% hit '
+                'rate). The statistics below are cumulative.'
+            )
+        self.say(escape(line))
+        return line
+
+    def _cache_stats(self, delta: str | None = None) -> None:
+        """Print the cache statistics and write this run's line and them to the job summary."""
         assert self.launcher is not None
         cmd = [self.launcher.name, '--show-stats']
         summary = self.env.get('GITHUB_STEP_SUMMARY')
@@ -2011,7 +2088,10 @@ class Builder:
             )
             return
         with Path(summary).open('a', encoding='utf-8') as handle:
-            handle.write(f'## {self.launcher.name}\n```\n{text}\n```\n')
+            handle.write(f'## {self.launcher.name}\n')
+            if delta:
+                handle.write(f'{delta}\n\n')
+            handle.write(f'```\n{text}\n```\n')
 
     def _jobs(self) -> tuple[int, int, int | None]:
         """Return the job count, the CPU cores and the physical memory it was chosen from."""
