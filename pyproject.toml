@@ -46,7 +46,7 @@ pyvista-build = 'pyvista_build.cli:main'
 Repository = 'https://github.com/pyvista/pyvista-build'
 
 [dependency-groups]
-coverage = ['coverage[toml]==7.16.1', 'diff-cover==10.6.0']
+coverage = ['coverage[toml]==7.16.2', 'diff-cover==10.6.0']
 dev = ['lxml', 'mypy', 'pre-commit', 'pytest', 'pytest-cov', 'pytest-mock']
 docs = [
   'erbsland-sphinx-ansi==1.2.4',
