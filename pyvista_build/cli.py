@@ -51,8 +51,8 @@ APP = App(
     result_action='return_value',
 )
 
-#: One line per ``--defaults`` set the current run applies, printed before the first step.
-_defaults_lines: list[str] = []
+#: The line for the ``--defaults`` set the current run applies, printed before the first step.
+_defaults_line: list[str] = []
 
 
 def print_error_and_exit(message: str, *, title: str = 'Error') -> NoReturn:
@@ -245,11 +245,10 @@ def build(
         ),
     ] = False,
     defaults: Annotated[
-        list[str] | None,
+        str | None,
         Parameter(
             negative='',
-            help="Apply the manifest's ``[defaults.NAME]`` set before the other options. "
-            'Repeatable: later sets and the command line win.',
+            help="Apply the manifest's ``[defaults.NAME]`` set; the other options win over it.",
         ),
     ] = None,
 ) -> None:
@@ -299,7 +298,7 @@ def build(
         manylinux=(manylinux_image or default_image()) if manylinux else None,
         python=str(python.absolute()) if python is not None else default_python(),
     )
-    for line in _defaults_lines:
+    for line in _defaults_line:
         APP.console.print(f'[dim]{escape(line)}[/dim]', highlight=False)
     try:
         Builder(config, console=APP.console).build()
@@ -493,42 +492,42 @@ def _user_options(tokens: list[str]) -> set[str]:
 
 
 def _defaults_tokens(
-    names: list[str],
+    name: str,
     backend: str,
     source: Path | None,
     user_tokens: list[str],
     user_groups: tuple[list[str], list[str]],
 ) -> list[str]:
-    """Merge the named sets, drop what the command line names, and expand the rest."""
+    """Expand the named set without the options the command line names."""
     path = _defaults_manifest(backend, source)
     manifest = load_manifest(path)
     where = short_path(path)
-    merged: dict[str, Any] = {}
-    for name in names:
-        if name not in manifest.defaults:
-            available = (
-                f'the sets are {", ".join(manifest.defaults)}'
-                if manifest.defaults
-                else 'it defines no sets'
-            )
-            msg = f'{where} has no [defaults.{name}]; {available}.'
-            raise ManifestError(msg)
-        values = manifest.defaults[name]
-        expand_defaults(name, values, where=where, base=path.parent)
-        merged.update({key.replace('-', '_'): value for key, value in values.items()})
-        _defaults_lines.append(describe_defaults(name, values, where=where))
+    if name not in manifest.defaults:
+        available = (
+            f'the sets are {", ".join(manifest.defaults)}'
+            if manifest.defaults
+            else 'it defines no sets'
+        )
+        msg = f'{where} has no [defaults.{name}]; {available}.'
+        raise ManifestError(msg)
+    values = manifest.defaults[name]
+    expand_defaults(name, values, where=where, base=path.parent)
+    _defaults_line.append(describe_defaults(name, values, where=where))
     named = _user_options(user_tokens)
-    for key in [k for k, v in merged.items() if k in named and not isinstance(v, list)]:
-        del merged[key]
+    kept = {
+        key.replace('-', '_'): value
+        for key, value in values.items()
+        if key.replace('-', '_') not in named or isinstance(value, list)
+    }
     with_, without = user_groups
     for key, other in (('with', without), ('without', with_)):
-        if key in merged:
-            merged[key] = [group for group in merged[key] if group not in other]
-    return expand_defaults('+'.join(names), merged, where=where, base=path.parent)
+        if key in kept:
+            kept[key] = [group for group in kept[key] if group not in other]
+    return expand_defaults(name, kept, where=where, base=path.parent)
 
 
 def main(argv: list[str] | str | None = None) -> None:
-    """Run the command line, expanding any ``--defaults`` sets first.
+    """Run the command line, expanding the ``--defaults`` set first.
 
     Parameters
     ----------
@@ -539,12 +538,11 @@ def main(argv: list[str] | str | None = None) -> None:
     if isinstance(argv, str):
         argv = shlex.split(argv, posix=os.name != 'nt')
     _, bound, _ = APP.parse_args(argv)
-    raw = bound.arguments.get('defaults')
-    names = _split_csv(raw)
-    _defaults_lines.clear()
-    if raw and not names:
-        print_error_and_exit('--defaults names no set.')
-    if names:
+    name = bound.arguments.get('defaults')
+    _defaults_line.clear()
+    if name is not None:
+        if not name.strip() or ',' in name:
+            print_error_and_exit('--defaults takes one set name.')
         backend = _backend_name(bound.arguments.get('backend'))
         user_tokens = list(argv if argv is not None else sys.argv[1:])
         groups = (
@@ -553,7 +551,7 @@ def main(argv: list[str] | str | None = None) -> None:
         )
         try:
             tokens = _defaults_tokens(
-                names, backend, bound.arguments.get('source'), user_tokens, groups
+                name, backend, bound.arguments.get('source'), user_tokens, groups
             )
         except ManifestError as err:
             print_error_and_exit(escape(str(err)))

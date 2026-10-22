@@ -724,7 +724,7 @@ def test_user_options():
 def test_cli_defaults_sets(
     captured: list[BuildConfig], tmp_path: Path, capsys: pytest.CaptureFixture
 ):
-    """Sets apply in order, the command line wins, and each set prints one line."""
+    """One set applies, the command line wins over it, and the set prints one line."""
     (tmp_path / 'pyvista-build.toml').write_text(DEFAULTS_MANIFEST)
     main('vtk')
     assert captured[-1].yes is False
@@ -736,24 +736,25 @@ def test_cli_defaults_sets(
     assert capsys.readouterr().out == (
         'Defaults ci from pyvista-build.toml: yes, source=., opt=lto=0\n'
     )
-    main('vtk --defaults ci --defaults fast --jobs 7 --opt lto=1')
+    main('vtk --defaults ci --jobs 7 --opt lto=1')
     config = captured[-1]
-    assert (config.yes, config.repair, config.jobs) == (True, False, 7)
-    assert config.options == ['lto=0', 'lto=1']
-    assert config.build_dir == (tmp_path / 'out').resolve()
-    out = capsys.readouterr().out
-    assert 'Defaults ci from pyvista-build.toml: yes, source=., opt=lto=0\n' in out
-    assert 'Defaults fast from pyvista-build.toml: repair=false, jobs=2, build-dir=out\n' in out
-    main('vtk --defaults ci,fast --build-dir elsewhere')
-    assert captured[-1].build_dir == (tmp_path / 'elsewhere').resolve()
-    assert captured[-1].repair is False
-    main('vtk --defaults ci --defaults off')
+    assert (config.yes, config.jobs, config.options) == (True, 7, ['lto=0', 'lto=1'])
+    capsys.readouterr()
+    main('vtk --defaults fast --build-dir elsewhere')
+    config = captured[-1]
+    assert (config.repair, config.jobs) == (False, 2)
+    assert config.build_dir == (tmp_path / 'elsewhere').resolve()
+    assert capsys.readouterr().out == (
+        'Defaults fast from pyvista-build.toml: repair=false, jobs=2, build-dir=out\n'
+    )
+    main('vtk --defaults off')
     assert (captured[-1].yes, captured[-1].with_) == (False, ['io'])
     main('vtk --defaults off --without io -y')
     assert (captured[-1].yes, captured[-1].with_, captured[-1].without) == (True, [], ['io'])
-    with pytest.raises(SystemExit) as info:
-        main('vtk --jobs 2 --jobs 3')
-    assert info.value.code == 2
+    for args in ('vtk --jobs 2 --jobs 3', 'vtk --defaults ci --defaults fast'):
+        with pytest.raises(SystemExit) as info:
+            main(args)
+        assert info.value.code == 2
 
 
 def test_cli_defaults_from_source(captured: list[BuildConfig], tmp_path: Path):
@@ -800,7 +801,8 @@ def test_cli_defaults_shipped_manifest(
         ),
         (DEFAULTS_MANIFEST + '[defaults.x]\njobs = "4"\n', 'vtk --defaults x', 'jobs must be an'),
         ('[defaults\n', 'vtk --defaults ci', 'pyvista-build.toml: Expected'),
-        (DEFAULTS_MANIFEST, ['vtk', '--defaults', ''], '--defaults names no set.'),
+        (DEFAULTS_MANIFEST, ['vtk', '--defaults', ''], '--defaults takes one set name.'),
+        (DEFAULTS_MANIFEST, 'vtk --defaults ci,fast', '--defaults takes one set name.'),
         (
             DEFAULTS_MANIFEST,
             'demo --defaults ci',
