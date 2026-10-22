@@ -2257,7 +2257,7 @@ class Builder:
             raise BuildError(msg)
         if not cfg.dry_run:
             for inside, folder in mounts.items():
-                if inside != package_mount:
+                if inside not in (package_mount, _manylinux.SUMMARY):
                     folder.mkdir(parents=True, exist_ok=True)
         started = time.time()
         self.run(cmd, passthrough=True)

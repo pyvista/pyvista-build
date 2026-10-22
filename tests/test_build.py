@@ -2266,3 +2266,31 @@ def test_container_mounts_job_summary(tmp_path: Path):
         'img', mounts={manylinux.WORK: tmp_path}, script='true', interactive=False, env={}
     )
     assert not any('GITHUB_STEP_SUMMARY' in part for part in cmd)
+
+
+def test_build_in_manylinux_mounts_job_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """A container build mounts the summary file as a file, not as a created directory."""
+    mocker.patch.object(phases.time, 'time', return_value=1000.0)
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    mocker.patch.object(manylinux, 'package_dir', return_value=tmp_path / 'pv')
+    mocker.patch.object(manylinux, 'requirements', return_value=['numpy'])
+    mocker.patch.object(manylinux, 'file_owner', return_value='7:7')
+    mocker.patch.object(
+        subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout='')
+    )
+    summary = tmp_path / 'summary.md'
+    summary.write_text('')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    src = tmp_path / 'src'
+    (src / '.git').mkdir(parents=True)
+    cfg = _config(tmp_path, dry_run=False, manylinux='img', source=src, repair=False, yes=True)
+    builder = Builder(cfg, Console(record=True, width=4000, force_terminal=False))
+    run = mocker.patch.object(builder, 'run')
+    mocker.patch.object(builder, 'phase_install')
+    cfg.dist_dir.mkdir(parents=True)
+    wheel = cfg.dist_dir / 'vtk-9.7.0-cp314-cp314-linux_x86_64.whl'
+    wheel.write_text('')
+    os.utime(wheel, (1500.0, 1500.0))
+    builder.build()
+    assert f'{summary}:{manylinux.SUMMARY}' in run.call_args.args[0]
+    assert summary.is_file()
