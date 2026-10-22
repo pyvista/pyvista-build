@@ -30,6 +30,7 @@ TOP_LEVEL_KEYS = (
     'options',
     'hooks',
     'manylinux',
+    'defaults',
     'repair',
 )
 REPAIR_KEYS = ('strip', *OS_NAMES)
@@ -154,6 +155,7 @@ class Manifest:
     options: dict[str, Option]
     hooks: dict[str, tuple[str, ...]]
     manylinux_packages: tuple[str, ...] = ()
+    defaults: dict[str, dict[str, Any]] = field(default_factory=dict)
     repair_strip: bool = False
     repair_args: dict[str, tuple[str, ...]] = field(default_factory=dict)
     path: Path | None = field(default=None, compare=False)
@@ -425,6 +427,11 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
     for name, templates in hooks.items():
         for template in templates:
             _check_placeholders(template, PLACEHOLDERS, where=f'[hooks] {name}')
+    defaults = _table(data, 'defaults', where='manifest')
+    for set_name, values in defaults.items():
+        if not isinstance(values, dict):
+            msg = f'[defaults]: {set_name!r} must be a table, written as [defaults.{set_name}].'
+            raise ManifestError(msg)
     return Manifest(
         name=backend_name,
         import_name=import_name,
@@ -439,6 +446,7 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
         options=options,
         hooks=hooks,
         manylinux_packages=_str_list(manylinux, 'packages', where='[manylinux]'),
+        defaults=defaults,
         repair_strip=_optional(repair, 'strip', bool, where='[repair]', default=False),
         repair_args={name: _str_list(repair, name, where='[repair]') for name in OS_NAMES},
         path=path,

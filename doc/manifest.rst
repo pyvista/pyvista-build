@@ -290,6 +290,34 @@ A literal brace is written as ``{{`` or ``}}``.
     post_build = ["{python} ci/prune_setup_py.py {build_dir}"]
     post_wheel = ["{python} ci/pyvista_build_hooks.py retag {build_dir}"]
 
+``[defaults.<name>]``
+---------------------
+A named set of values for the command's own options, applied with
+``pyvista-build <backend> --defaults <name>``. Nothing is read without the
+flag. Keys are the option names without the leading dashes, values follow
+the option's type, and a repeatable option such as ``opt`` takes a list.
+``backend`` and ``defaults`` are not accepted as keys. Paths are relative to
+the manifest's directory.
+
+.. code-block:: toml
+
+    [defaults.ci]
+    yes = true
+    source = "."
+    opt = ["lto=0", "gate_o2=1"]
+
+    [defaults.fast]
+    source = "."
+    opt = ["lto=0", "abi3=0"]
+
+One set applies per run, and anything given on the command line wins over
+it (``--opt`` and ``-D`` values from the set stay, with the command line's
+own applied last). The set is read from the ``--source`` checkout's manifest,
+else from a ``pyvista-build.toml`` in the current directory, else from the
+manifest shipped for the backend. The build prints one line naming the file
+and the values it applied, and an unknown set or key, or a value of the wrong
+type, stops the command with the file's name.
+
 Checking a Manifest
 -------------------
 A dry run loads the manifest and prints every command the build would run,

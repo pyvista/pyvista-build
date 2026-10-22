@@ -14,8 +14,12 @@ from rich.console import Console
 
 from pyvista_build import BuildConfig
 from pyvista_build import Builder
+from pyvista_build import ManifestError
+from pyvista_build import cli
 from pyvista_build import phases
 from pyvista_build import tools
+from pyvista_build.cli import describe_defaults
+from pyvista_build.cli import expand_defaults
 from pyvista_build.cli import main
 
 if TYPE_CHECKING:
@@ -625,6 +629,212 @@ def test_cli_cache_dir_rejected_without_compiler_cache(capsys: pytest.CaptureFix
     with pytest.raises(SystemExit):
         main('vtk --dry-run --compiler-cache none --cache-dir cache')
     assert '--cache-dir has no effect with --compiler-cache none' in capsys.readouterr().err
+
+
+DEFAULTS_MANIFEST = (
+    'manifest_version = 1\n'
+    '[backend]\nname = "vtk"\ndefault_ref = "v1"\n'
+    '[options.lto]\nhelp = "LTO"\ndefault = true\ncmake = "LTO={value}"\n'
+    '[defaults.ci]\nyes = true\nsource = "."\nopt = ["lto=0"]\n'
+    '[defaults.fast]\nrepair = false\njobs = 2\nbuild-dir = "out"\n'
+    '[defaults.off]\nyes = false\nwith = ["io"]\n'
+)
+
+
+def test_expand_defaults(tmp_path: Path):
+    """Each key becomes its flag, lists repeat it, and paths follow the manifest's directory."""
+    values = {
+        'yes': True,
+        'verbose': False,
+        'repair': False,
+        'source': '.',
+        'build_dir': str(Path('/abs').resolve()),
+        'opt': ['lto=0', 'gate_o2=1'],
+        'with': ['io'],
+        'jobs': 4,
+        'build_type': 'Debug',
+        'url': 'https://example.com/f.git',
+    }
+    tokens = expand_defaults('ci', values, where='m.toml', base=tmp_path)
+    assert tokens == [
+        '--yes',
+        '--no-repair',
+        '--source',
+        str(tmp_path),
+        '--build-dir',
+        str(Path('/abs').resolve()),
+        '--opt',
+        'lto=0',
+        '--opt',
+        'gate_o2=1',
+        '--with',
+        'io',
+        '--jobs',
+        '4',
+        '--build-type',
+        'Debug',
+        '--url',
+        'https://example.com/f.git',
+    ]
+    assert expand_defaults('ci', {}, where='m.toml', base=tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ('values', 'match'),
+    [
+        ({'backend': 'vtk'}, "has unknown key 'backend'; the options are build_dir, "),
+        ({'defaults': ['x']}, "has unknown key 'defaults'"),
+        ({'nope': 1}, "has unknown key 'nope'"),
+        ({'yes': 'true'}, "yes must be true or false, not 'true'"),
+        ({'jobs': '4'}, "jobs must be an integer, not '4'"),
+        ({'jobs': True}, 'jobs must be an integer, not True'),
+        ({'opt': 'lto=0'}, "opt must be a list of strings, not 'lto=0'"),
+        ({'opt': [1]}, r'opt must be a list of strings, not \[1\]'),
+        ({'source': 1}, 'source must be a path, not 1'),
+        ({'ref': 1}, 'ref must be a string, not 1'),
+        ({'build_type': 'Fast'}, "build_type must be one of 'Release', 'RelWithDebInfo', 'Debug'"),
+    ],
+)
+def test_expand_defaults_errors(tmp_path: Path, values: dict[str, Any], match: str):
+    with pytest.raises(ManifestError, match=f'm.toml: \\[defaults.ci\\] {match}'):
+        expand_defaults('ci', values, where='m.toml', base=tmp_path)
+
+
+def test_describe_defaults():
+    values = {
+        'yes': True,
+        'source': '.',
+        'opt': ['lto=0', 'gate_o2=1'],
+        'repair': False,
+        'jobs': 2,
+    }
+    assert (
+        describe_defaults('ci', values, where='pyvista-build.toml')
+        == 'Defaults ci from pyvista-build.toml: yes, source=., opt=lto=0,gate_o2=1, '
+        'repair=false, jobs=2'
+    )
+
+
+def test_user_options():
+    """Every flag form names its option, and tokens after -- are not read."""
+    tokens = ['vtk', '--jobs=2', '-y', '--no-repair', '--with', 'io', '--', '--opt']
+    assert cli._user_options(tokens) == {'jobs', 'yes', 'repair', 'with'}
+
+
+def test_cli_defaults_sets(
+    captured: list[BuildConfig], tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    """One set applies, the command line wins over it, and the set prints one line."""
+    (tmp_path / 'pyvista-build.toml').write_text(DEFAULTS_MANIFEST)
+    main('vtk')
+    assert captured[-1].yes is False
+    assert capsys.readouterr().out == ''
+    main('vtk --defaults ci')
+    config = captured[-1]
+    assert (config.yes, config.source, config.options) == (True, tmp_path.resolve(), ['lto=0'])
+    assert config.build_dir == (tmp_path / 'vtk-build').resolve()
+    assert capsys.readouterr().out == (
+        'Defaults ci from pyvista-build.toml: yes, source=., opt=lto=0\n'
+    )
+    main('vtk --defaults ci --jobs 7 --opt lto=1')
+    config = captured[-1]
+    assert (config.yes, config.jobs, config.options) == (True, 7, ['lto=0', 'lto=1'])
+    capsys.readouterr()
+    main('vtk --defaults fast --build-dir elsewhere')
+    config = captured[-1]
+    assert (config.repair, config.jobs) == (False, 2)
+    assert config.build_dir == (tmp_path / 'elsewhere').resolve()
+    assert capsys.readouterr().out == (
+        'Defaults fast from pyvista-build.toml: repair=false, jobs=2, build-dir=out\n'
+    )
+    main('vtk --defaults off')
+    assert (captured[-1].yes, captured[-1].with_) == (False, ['io'])
+    main('vtk --defaults off --without io -y')
+    assert (captured[-1].yes, captured[-1].with_, captured[-1].without) == (True, [], ['io'])
+    for args in ('vtk --jobs 2 --jobs 3', 'vtk --defaults ci --defaults fast'):
+        with pytest.raises(SystemExit) as info:
+            main(args)
+        assert info.value.code == 2
+
+
+def test_cli_defaults_from_source(captured: list[BuildConfig], tmp_path: Path):
+    """The checkout's manifest comes first, then the working directory's, then the shipped one."""
+    source = tmp_path / 'src'
+    source.mkdir()
+    (source / 'pyvista-build.toml').write_text(DEFAULTS_MANIFEST)
+    main(f'vtk --source {source} --defaults fast')
+    assert captured[-1].build_dir == (source / 'out').resolve()
+    assert captured[-1].source == source.resolve()
+    (tmp_path / 'pyvista-build.toml').write_text(DEFAULTS_MANIFEST.replace('"out"', '"here"'))
+    main(f'vtk --source {source} --defaults fast')
+    assert captured[-1].build_dir == (source / 'out').resolve()
+    main('vtk --defaults fast')
+    assert captured[-1].build_dir == (tmp_path / 'here').resolve()
+    main(f'vtk --source {tmp_path / "other"} --defaults fast')
+    assert captured[-1].build_dir == (tmp_path / 'here').resolve()
+
+
+@pytest.mark.usefixtures('captured')
+def test_cli_defaults_shipped_manifest(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    monkeypatch.setenv('PYVISTA_VTK_BACKEND', 'vtkmodules')
+    with pytest.raises(SystemExit):
+        main('--defaults ci')
+    err = capsys.readouterr().err
+    assert 'vtk.toml has no [defaults.ci]; it defines no sets.' in err
+
+
+@pytest.mark.usefixtures('captured')
+@pytest.mark.parametrize(
+    ('text', 'args', 'match'),
+    [
+        (
+            DEFAULTS_MANIFEST,
+            'vtk --defaults nope',
+            'has no [defaults.nope]; the sets are ci, fast, off.',
+        ),
+        (
+            DEFAULTS_MANIFEST + '[defaults.x]\nbogus = 1\n',
+            'vtk --defaults x',
+            "unknown key 'bogus'",
+        ),
+        (DEFAULTS_MANIFEST + '[defaults.x]\njobs = "4"\n', 'vtk --defaults x', 'jobs must be an'),
+        ('[defaults\n', 'vtk --defaults ci', 'pyvista-build.toml: Expected'),
+        (DEFAULTS_MANIFEST, ['vtk', '--defaults', ''], '--defaults takes one set name.'),
+        (DEFAULTS_MANIFEST, 'vtk --defaults ci,fast', '--defaults takes one set name.'),
+        (
+            DEFAULTS_MANIFEST,
+            'demo --defaults ci',
+            '--defaults needs a pyvista-build.toml: none in ., and none is shipped for',
+        ),
+    ],
+)
+def test_cli_defaults_errors(
+    tmp_path: Path, capsys: pytest.CaptureFixture, text: str, args: str | list[str], match: str
+):
+    if 'demo' not in (args if isinstance(args, str) else ' '.join(args)):
+        (tmp_path / 'pyvista-build.toml').write_text(text)
+    with pytest.raises(SystemExit):
+        main(args)
+    assert match in capsys.readouterr().err
+
+
+@pytest.mark.usefixtures('no_tools')
+def test_cli_defaults_dry_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    """A dry run through ``main`` applies the set to the whole build."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / '.git').mkdir()
+    (tmp_path / 'pyvista-build.toml').write_text(
+        DEFAULTS_MANIFEST + '[defaults.check]\ndry_run = true\nsource = "."\nopt = ["lto=0"]\n'
+    )
+    main(['vtk', '--defaults', 'check'])
+    out = capsys.readouterr().out
+    assert out.startswith('Defaults check from pyvista-build.toml: dry_run, source=., opt=lto=0\n')
+    assert 'Dry run: every command is printed and nothing runs.' in out
+    assert '-DLTO=OFF' in out
 
 
 def test_cli_os_error(mocker: MockerFixture, tmp_path: Path, capsys: pytest.CaptureFixture):
