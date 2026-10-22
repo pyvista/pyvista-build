@@ -1457,6 +1457,7 @@ class Builder:
             self.say(f'Compiler cache: [bold]{self.launcher.name}[/bold] in [bold]{where}[/bold]')
             self.env[var] = str(cache_dir)
         if self.launcher.name == 'ccache':
+            self.env.setdefault('CCACHE_SLOPPINESS', 'time_macros,locale,pch_defines')
             if cfg.os_name != 'windows':
                 self.env.setdefault('CCACHE_COMPILERCHECK', '%compiler% --version')
             try:

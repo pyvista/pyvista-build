@@ -1947,7 +1947,7 @@ def test_compiler_cache_row(tmp_path: Path, mocker: MockerFixture):
     )
 
 
-def test_ccache_basedir(tmp_path: Path, mocker: MockerFixture):
+def test_ccache_basedir(tmp_path: Path, mocker: MockerFixture, monkeypatch):
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
     builder = _builder(tmp_path, mocker, compiler_cache='ccache')
     builder._activate_compiler_cache()
@@ -1956,9 +1956,12 @@ def test_ccache_basedir(tmp_path: Path, mocker: MockerFixture):
     assert 'CCACHE_DIR' not in builder.env
     assert 'Compiler cache: ccache in its default location' in builder.console.export_text()
     assert builder.env['CCACHE_COMPILERCHECK'] == '%compiler% --version'
+    assert builder.env['CCACHE_SLOPPINESS'] == 'time_macros,locale,pch_defines'
+    monkeypatch.setenv('CCACHE_SLOPPINESS', 'locale')
     builder = _builder(tmp_path, mocker, compiler_cache='ccache', source=tmp_path.parents[-1])
     builder._activate_compiler_cache()
     assert 'CCACHE_BASEDIR' not in builder.env
+    assert builder.env['CCACHE_SLOPPINESS'] == 'locale'
 
 
 @pytest.mark.parametrize(('choice', 'var'), [('ccache', 'CCACHE_DIR'), ('sccache', 'SCCACHE_DIR')])

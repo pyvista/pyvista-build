@@ -41,6 +41,7 @@ def _no_compiler_cache_env(monkeypatch: pytest.MonkeyPatch):
         'CCACHE_DIR',
         'CCACHE_LOGFILE',
         'CCACHE_NOHASHDIR',
+        'CCACHE_SLOPPINESS',
         'SCCACHE_DIR',
     ):
         monkeypatch.delenv(name, raising=False)
