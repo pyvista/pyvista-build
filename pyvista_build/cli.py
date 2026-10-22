@@ -49,7 +49,6 @@ APP = App(
     usage='Usage: pyvista-build BACKEND [OPTIONS]',
     console=Console(),
     result_action='return_value',
-    default_parameter=Parameter(allow_repeating=True),
 )
 
 #: One line per ``--defaults`` set the current run applies, printed before the first step.
@@ -334,7 +333,7 @@ def _option_types() -> dict[str, tuple[Any, Parameter]]:
         type_, parameter = typing.get_args(hint)
         if typing.get_origin(type_) in (typing.Union, types.UnionType):
             (type_,) = [t for t in typing.get_args(type_) if t is not type(None)]
-        found[name.rstrip('_')] = (type_, parameter)
+        found[name.removesuffix('_')] = (type_, parameter)
     return found
 
 
@@ -475,12 +474,36 @@ def _defaults_manifest(backend: str, source: Path | None) -> Path:
     raise ManifestError(msg)
 
 
-def _defaults_tokens(names: list[str], backend: str, source: Path | None) -> list[str]:
-    """Expand the named sets into tokens, recording the line to print for each."""
+def _user_options(tokens: list[str]) -> set[str]:
+    """Return the options the user's own tokens name, by any of their flags."""
+    flags: dict[str, str] = {}
+    for key, (_, parameter) in _option_types().items():
+        names = parameter.name if isinstance(parameter.name, tuple) else (parameter.name,)
+        for flag in [*(n for n in names if isinstance(n, str)), _flag(key, parameter)]:
+            flags[flag] = key
+            if flag.startswith('--'):
+                flags[f'--no-{flag[2:]}'] = key
+    named = set()
+    for token in tokens:
+        if token == '--':
+            break
+        if token.startswith('-') and token.split('=', 1)[0] in flags:
+            named.add(flags[token.split('=', 1)[0]])
+    return named
+
+
+def _defaults_tokens(
+    names: list[str],
+    backend: str,
+    source: Path | None,
+    user_tokens: list[str],
+    user_groups: tuple[list[str], list[str]],
+) -> list[str]:
+    """Merge the named sets, drop what the command line names, and expand the rest."""
     path = _defaults_manifest(backend, source)
     manifest = load_manifest(path)
     where = short_path(path)
-    tokens: list[str] = []
+    merged: dict[str, Any] = {}
     for name in names:
         if name not in manifest.defaults:
             available = (
@@ -491,9 +514,17 @@ def _defaults_tokens(names: list[str], backend: str, source: Path | None) -> lis
             msg = f'{where} has no [defaults.{name}]; {available}.'
             raise ManifestError(msg)
         values = manifest.defaults[name]
-        tokens += expand_defaults(name, values, where=where, base=path.parent)
+        expand_defaults(name, values, where=where, base=path.parent)
+        merged.update({key.replace('-', '_'): value for key, value in values.items()})
         _defaults_lines.append(describe_defaults(name, values, where=where))
-    return tokens
+    named = _user_options(user_tokens)
+    for key in [k for k, v in merged.items() if k in named and not isinstance(v, list)]:
+        del merged[key]
+    with_, without = user_groups
+    for key, other in (('with', without), ('without', with_)):
+        if key in merged:
+            merged[key] = [group for group in merged[key] if group not in other]
+    return expand_defaults('+'.join(names), merged, where=where, base=path.parent)
 
 
 def main(argv: list[str] | str | None = None) -> None:
@@ -508,13 +539,23 @@ def main(argv: list[str] | str | None = None) -> None:
     if isinstance(argv, str):
         argv = shlex.split(argv, posix=os.name != 'nt')
     _, bound, _ = APP.parse_args(argv)
-    names = _split_csv(bound.arguments.get('defaults'))
+    raw = bound.arguments.get('defaults')
+    names = _split_csv(raw)
     _defaults_lines.clear()
+    if raw and not names:
+        print_error_and_exit('--defaults names no set.')
     if names:
         backend = _backend_name(bound.arguments.get('backend'))
+        user_tokens = list(argv if argv is not None else sys.argv[1:])
+        groups = (
+            _split_csv(bound.arguments.get('with_')),
+            _split_csv(bound.arguments.get('without')),
+        )
         try:
-            tokens = _defaults_tokens(names, backend, bound.arguments.get('source'))
+            tokens = _defaults_tokens(
+                names, backend, bound.arguments.get('source'), user_tokens, groups
+            )
         except ManifestError as err:
             print_error_and_exit(escape(str(err)))
-        argv = tokens + list(argv if argv is not None else sys.argv[1:])
+        argv = tokens + user_tokens
     APP(tokens=argv)

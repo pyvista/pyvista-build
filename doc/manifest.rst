@@ -287,13 +287,15 @@ the manifest's directory.
     source = "."
     opt = ["lto=0", "abi3=0"]
 
-The flag repeats, and the sets apply in order: ``--defaults ci --defaults
-fast`` lets ``fast`` override ``ci``, and anything given on the command line
-wins over both. The sets are read from the ``--source`` checkout's manifest,
-else from a ``pyvista-build.toml`` in the current directory, else from the
-manifest shipped for the backend. The build prints one line per set naming
-the file and the values it applied, and an unknown set or key, or a value of
-the wrong type, stops the command with the file's name.
+The flag repeats, or takes a comma-separated list, and the sets apply in order:
+``--defaults ci --defaults fast`` lets ``fast`` override ``ci``, and anything
+given on the command line wins over both (``--opt`` and ``-D`` values from a
+set stay, with the command line's own applied last). The sets are read from the
+``--source`` checkout's manifest, else from a ``pyvista-build.toml`` in the
+current directory, else from the manifest shipped for the backend. The build
+prints one line per set naming the file and the values it applied, and an
+unknown set or key, or a value of the wrong type, stops the command with the
+file's name.
 
 Checking a Manifest
 -------------------

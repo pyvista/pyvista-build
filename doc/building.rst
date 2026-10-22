@@ -187,8 +187,8 @@ wheel at the end.
 
 A backend that always builds the same way in CI keeps those flags in a
 ``[defaults.<name>]`` table of its manifest, and the command line names
-the set. ``cvista`` keeps a ``ci`` set with ``--yes``, ``--source .`` and
-its build options, so its job runs:
+the set. A backend whose ``ci`` set holds ``--yes``, ``--source .`` and
+its build options runs its job as:
 
 .. code-block:: bash
 

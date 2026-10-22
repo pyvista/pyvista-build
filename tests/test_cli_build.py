@@ -15,6 +15,7 @@ from rich.console import Console
 from pyvista_build import BuildConfig
 from pyvista_build import Builder
 from pyvista_build import ManifestError
+from pyvista_build import cli
 from pyvista_build import phases
 from pyvista_build import tools
 from pyvista_build.cli import describe_defaults
@@ -636,6 +637,7 @@ DEFAULTS_MANIFEST = (
     '[options.lto]\nhelp = "LTO"\ndefault = true\ncmake = "LTO={value}"\n'
     '[defaults.ci]\nyes = true\nsource = "."\nopt = ["lto=0"]\n'
     '[defaults.fast]\nrepair = false\njobs = 2\nbuild-dir = "out"\n'
+    '[defaults.off]\nyes = false\nwith = ["io"]\n'
 )
 
 
@@ -713,6 +715,12 @@ def test_describe_defaults():
     )
 
 
+def test_user_options():
+    """Every flag form names its option, and tokens after -- are not read."""
+    tokens = ['vtk', '--jobs=2', '-y', '--no-repair', '--with', 'io', '--', '--opt']
+    assert cli._user_options(tokens) == {'jobs', 'yes', 'repair', 'with'}
+
+
 def test_cli_defaults_sets(
     captured: list[BuildConfig], tmp_path: Path, capsys: pytest.CaptureFixture
 ):
@@ -739,6 +747,13 @@ def test_cli_defaults_sets(
     main('vtk --defaults ci,fast --build-dir elsewhere')
     assert captured[-1].build_dir == (tmp_path / 'elsewhere').resolve()
     assert captured[-1].repair is False
+    main('vtk --defaults ci --defaults off')
+    assert (captured[-1].yes, captured[-1].with_) == (False, ['io'])
+    main('vtk --defaults off --without io -y')
+    assert (captured[-1].yes, captured[-1].with_, captured[-1].without) == (True, [], ['io'])
+    with pytest.raises(SystemExit) as info:
+        main('vtk --jobs 2 --jobs 3')
+    assert info.value.code == 2
 
 
 def test_cli_defaults_from_source(captured: list[BuildConfig], tmp_path: Path):
@@ -776,7 +791,7 @@ def test_cli_defaults_shipped_manifest(
         (
             DEFAULTS_MANIFEST,
             'vtk --defaults nope',
-            'has no [defaults.nope]; the sets are ci, fast.',
+            'has no [defaults.nope]; the sets are ci, fast, off.',
         ),
         (
             DEFAULTS_MANIFEST + '[defaults.x]\nbogus = 1\n',
@@ -784,7 +799,8 @@ def test_cli_defaults_shipped_manifest(
             "unknown key 'bogus'",
         ),
         (DEFAULTS_MANIFEST + '[defaults.x]\njobs = "4"\n', 'vtk --defaults x', 'jobs must be an'),
-        ('[defaults\n', 'vtk --defaults ci', 'pyvista-build.toml'),
+        ('[defaults\n', 'vtk --defaults ci', 'pyvista-build.toml: Expected'),
+        (DEFAULTS_MANIFEST, 'vtk --defaults ""', '--defaults names no set.'),
         (
             DEFAULTS_MANIFEST,
             'demo --defaults ci',
