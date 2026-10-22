@@ -41,7 +41,8 @@ stock one.
 The Steps
 ~~~~~~~~~
 Every build runs the same eight steps, in this order. Each one prints what it
-is about to do, and ``--interactive`` waits for a yes before it runs.
+is about to do, and ``--interactive`` waits for a yes before it runs. See the
+:ref:`dry run <dry-run>` for sample output for each step.
 
 1. Tools
 ^^^^^^^^

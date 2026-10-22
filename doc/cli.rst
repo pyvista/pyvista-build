@@ -72,6 +72,10 @@ Build a portable Linux wheel inside a manylinux container (needs Docker, see
 
     pyvista-build vtk --manylinux
 
+.. _dry-run:
+
+Dry Run
+-------
 Print the commands a build would run without running any of them, which is the
 quickest way to see what the eight steps do. For ``cvista``, whose manifest lives
 in its source tree, a dry run needs an existing checkout:
