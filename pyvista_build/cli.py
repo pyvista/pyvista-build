@@ -154,7 +154,7 @@ def build(
     cache_dir: Annotated[
         Path | None,
         Parameter(
-            help='Compiler cache directory, used with ``--compiler-cache``. Defaults to '
+            help='Compiler cache directory. Defaults to '
             "``$CCACHE_DIR`` or ``$SCCACHE_DIR`` when set, else the cache tool's own default "
             'location, or ``<build-dir>/compiler-cache`` with ``--manylinux``.'
         ),
@@ -258,7 +258,7 @@ def build(
     if manylinux_image is not None and not manylinux:
         print_error_and_exit('--manylinux-image needs --manylinux.')
     if cache_dir is not None and compiler_cache == 'none':
-        print_error_and_exit('--cache-dir needs --compiler-cache.')
+        print_error_and_exit('--cache-dir has no effect with --compiler-cache none.')
     config = BuildConfig(
         backend=backend,
         build_dir=(build_dir or Path(f'{backend}-build')).resolve(),

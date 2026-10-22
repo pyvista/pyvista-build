@@ -48,10 +48,12 @@ is about to do, and ``--interactive`` waits for a yes before it runs. See the
 ^^^^^^^^
 Ensure the tools the build needs are available.
 
-- Checks ``git``, ``cmake``, ``ninja``, a C++ compiler, and the wheel repair
-  tool before anything is downloaded. See `Tooling`_ for what each one does.
+- Checks ``git``, ``cmake``, ``ninja``, a C++ compiler, the wheel repair
+  tool, and ``patchelf`` on Linux before anything is downloaded. See
+  `Tooling`_ for what each one does.
 - Lists everything the build would install, each item with where it goes:
-  ``cmake``, ``ninja``, and the repair tool when missing or too old,
+  ``cmake``, ``ninja``, the repair tool, and ``patchelf`` on Linux when
+  missing or too old,
   ``setuptools`` and ``wheel``, and the finished wheel with ``--install``.
 - Starting the build covers that whole list. ``--interactive`` asks again at
   this step, and ``--yes`` answers in advance. Without a terminal and without
@@ -222,10 +224,12 @@ it short: a warm cache turns a build of hours into minutes.
   one cache per operating system: object files from one do not help another.
 - The cache tools read their own environment variables, and the command
   passes every ``CCACHE_*`` and ``SCCACHE_*`` setting through to the build
-  and into the manylinux container, along with ``FORCE_COLOR``, ``NO_COLOR``,
-  ``TERM`` and ``COLUMNS`` so the container's output is colored and wrapped
-  like the host's. Set ``FORCE_COLOR=1`` in a job to keep the colors in its
-  log. ``CCACHE_MAXSIZE=1G`` or
+  and into the manylinux container except the host paths: ``CCACHE_DIR``
+  becomes the mounted cache and ``CCACHE_BASEDIR``, ``CCACHE_CONFIGPATH``,
+  ``CCACHE_LOGFILE`` and ``SCCACHE_DIR`` stay on the host. ``FORCE_COLOR``,
+  ``NO_COLOR``, ``TERM`` and ``COLUMNS`` go in as well, so the container's
+  output is colored and wrapped like the host's. Set ``FORCE_COLOR=1`` in a
+  job to keep the colors in its log. ``CCACHE_MAXSIZE=1G`` or
   ``SCCACHE_CACHE_SIZE=1G`` is the one worth setting in a job: the defaults
   are 5 GB and 10 GB, a full VTK build fits in 1 GB, and the cache is
   uploaded and downloaded on every run. A developer machine needs no cap.
@@ -391,7 +395,8 @@ here or in CI:
 - **Wheel repair tools** copy the shared libraries a wheel depends on
   into the wheel itself and set the platform tag, so it installs on
   other machines: `auditwheel
-  <https://github.com/pypa/auditwheel>`_ on Linux, `delocate
+  <https://github.com/pypa/auditwheel>`_ on Linux, which also needs
+  `patchelf <https://github.com/NixOS/patchelf>`_, `delocate
   <https://github.com/matthew-brett/delocate>`_ on macOS, and `delvewheel
   <https://github.com/adang1345/delvewheel>`_ on Windows. Installed with
   ``pip`` when missing.

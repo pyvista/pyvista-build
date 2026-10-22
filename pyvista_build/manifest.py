@@ -272,6 +272,9 @@ def _parse_group(name: str, table: Any) -> Group:
         ('help', 'default', 'cmake', 'cmake_off', 'os', 'conflicts', 'required'),
         where=where,
     )
+    if 'cmake' not in table:
+        msg = f"{where}: missing required key 'cmake'."
+        raise ManifestError(msg)
     os_names = _str_list(table, 'os', where=where, default=list(OS_NAMES))
     unknown = set(os_names) - set(OS_NAMES)
     if unknown:
@@ -352,7 +355,7 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
     if version != MANIFEST_VERSION:
         msg = (
             f'Unsupported manifest_version {version!r}; '
-            f'this PyVista reads version {MANIFEST_VERSION}.'
+            f'this pyvista-build reads version {MANIFEST_VERSION}.'
         )
         raise ManifestError(msg)
     _check_keys(data, TOP_LEVEL_KEYS, where='manifest')

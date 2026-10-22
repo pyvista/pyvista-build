@@ -60,17 +60,15 @@ jobs:
 
       # An artifact, not actions/cache: the repository's shared cache quota evicts a
       # large entry before the next run can restore it.
-    - name: Find the newest compiler cache from this branch or main
+    - name: Find the newest compiler cache
       id: find-compiler-cache
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-        BRANCH: ${{ github.head_ref || github.ref_name }}
       run: |
-        # Newest first: this branch's own upload, else main's, from this repository only.
+        # Newest first, from any branch of this repository: the cache keys on content.
         if ! run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=compiler-cache-${RUNNER_OS}&per_page=50" \
-          --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_repository_id == .workflow_run.repository_id)] as $a
-            | ([$a[] | select(.workflow_run.head_branch == env.BRANCH)] + [$a[] | select(.workflow_run.head_branch == "main")])[0].workflow_run.id // empty')"; then
+          --jq '[.artifacts[] | select((.expired | not) and .workflow_run.head_repository_id == .workflow_run.repository_id)][0].workflow_run.id // empty')"; then
           echo "::warning::Could not list the compiler cache artifacts; building cold"
           run_id=""
         fi
@@ -96,7 +94,7 @@ jobs:
 
     - name: Set up sccache (Windows)
       if: runner.os == 'Windows'
-      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba   # v0.0.9
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba   # v0.0.11
 
     - name: Build the VTK wheel
       shell: bash

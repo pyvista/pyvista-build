@@ -180,13 +180,21 @@ def test_resolve_options(demo):
         ),
         ({'groups': ['g']}, 'table'),
         ({'groups': {'g': 'x'}}, 'table'),
-        ({'groups': {'g': {'default': True}}}, 'help'),
+        ({'groups': {'g': {'default': True, 'cmake': ['A=1']}}}, 'help'),
         ({'groups': {'g': {'help': 'x', 'defualt': True}}}, 'unknown key'),
-        ({'groups': {'g': {'help': 'x', 'default': 'false'}}}, "'default' must be a boolean"),
-        ({'groups': {'g': {'help': 'x', 'os': ['beos']}}}, 'unknown os'),
-        ({'groups': {'g': {'help': 'x', 'conflicts': ['zz']}}}, 'unknown group'),
         (
-            {'groups': {'g': {'help': 'x', 'conflicts': ['h']}, 'h': {'help': 'y'}}},
+            {'groups': {'g': {'help': 'x', 'default': 'false', 'cmake': ['A=1']}}},
+            "'default' must be a boolean",
+        ),
+        ({'groups': {'g': {'help': 'x', 'os': ['beos'], 'cmake': ['A=1']}}}, 'unknown os'),
+        ({'groups': {'g': {'help': 'x', 'conflicts': ['zz'], 'cmake': ['A=1']}}}, 'unknown group'),
+        (
+            {
+                'groups': {
+                    'g': {'help': 'x', 'conflicts': ['h'], 'cmake': ['A=1']},
+                    'h': {'help': 'y', 'cmake': ['B=1']},
+                }
+            },
             "list 'g' in",
         ),
         ({'options': {'o': {'help': 'x', 'default': True, 'cmake': 'X=ON'}}}, 'placeholder'),
@@ -203,6 +211,7 @@ def test_resolve_options(demo):
             {'options': {'o': {'help': 'x', 'cmake': 'X={value}'}}},
             "missing required key 'default'",
         ),
+        ({'groups': {'g': {'help': 'x'}}}, "missing required key 'cmake'"),
         (
             {
                 'options': {
@@ -229,7 +238,7 @@ def test_resolve_options(demo):
         ({'cmake': {'common': ['-DA=1']}}, re.escape("write '-DA=1' without the -D prefix")),
         ({'cmake': {'macos': ['A']}}, re.escape("'A' must be KEY=VALUE or KEY:TYPE=VALUE")),
         ({'groups': {'g': {'help': 'x', 'cmake': ['A:BOOL=ON', '-DB=1']}}}, 'without the -D'),
-        ({'groups': {'g': {'help': 'x', 'cmake_off': ['=1']}}}, 'KEY=VALUE'),
+        ({'groups': {'g': {'help': 'x', 'cmake': ['A=1'], 'cmake_off': ['=1']}}}, 'KEY=VALUE'),
         (
             {'options': {'o': {'help': 'x', 'default': 1, 'cmake': '-DX={value}'}}},
             'without the -D',
