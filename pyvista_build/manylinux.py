@@ -34,6 +34,8 @@ DOCKER_INSTRUCTIONS = 'Install Docker: https://docs.docker.com/get-docker/'
 _HOST_PATH_VARS = frozenset(
     {'CCACHE_BASEDIR', 'CCACHE_CONFIGPATH', 'CCACHE_DIR', 'CCACHE_LOGFILE', 'SCCACHE_DIR'}
 )
+#: Terminal color settings the build inside the container follows as well.
+COLOR_VARS = ('FORCE_COLOR', 'NO_COLOR', 'TERM', 'COLUMNS')
 
 
 def host_arch() -> str:
@@ -231,7 +233,8 @@ def docker_command(
         mode = ':ro' if inside.startswith(PACKAGE_ROOT) else ''
         cmd += ['--volume', f'{outside}:{inside}{mode}']
     for name in sorted(env):
-        if name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS:
+        cache = name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS
+        if cache or name in COLOR_VARS:
             cmd += ['--env', name]
     if SUMMARY in mounts:
         cmd += ['--env', f'GITHUB_STEP_SUMMARY={SUMMARY}']

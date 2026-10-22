@@ -221,7 +221,10 @@ it short: a warm cache turns a build of hours into minutes.
   one cache per operating system: object files from one do not help another.
 - The cache tools read their own environment variables, and the command
   passes every ``CCACHE_*`` and ``SCCACHE_*`` setting through to the build
-  and into the manylinux container. ``CCACHE_MAXSIZE=1G`` or
+  and into the manylinux container, along with ``FORCE_COLOR``, ``NO_COLOR``,
+  ``TERM`` and ``COLUMNS`` so the container's output is colored and wrapped
+  like the host's. Set ``FORCE_COLOR=1`` in a job to keep the colors in its
+  log. ``CCACHE_MAXSIZE=1G`` or
   ``SCCACHE_CACHE_SIZE=1G`` is the one worth setting in a job: the defaults
   are 5 GB and 10 GB, a full VTK build fits in 1 GB, and the cache is
   uploaded and downloaded on every run. A developer machine needs no cap.
