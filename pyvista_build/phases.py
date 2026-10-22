@@ -334,7 +334,7 @@ class BuildConfig:
     clean: bool = False
     reconfigure: bool = False
     update: bool = False
-    compiler_cache: str = 'none'
+    compiler_cache: str = 'auto'
     cache_dir: Path | None = None
     version_suffix: str | None = None
     repair: bool = True

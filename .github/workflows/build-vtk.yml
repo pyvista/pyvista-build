@@ -106,7 +106,7 @@ jobs:
         FORCE_COLOR: '1'
       run: |
         pyvista-build vtk $MANYLINUX --yes --verbose \
-          --build-dir vtk-build --compiler-cache auto --cache-dir compiler-cache
+          --build-dir vtk-build --cache-dir compiler-cache
 
       # Fork pull requests read the cache but never upload one.
     - name: Upload compiler cache
