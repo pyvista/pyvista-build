@@ -47,6 +47,8 @@ jobs:
       with:
         python-version: '3.14'
 
+    - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7   # v10.2.0
+
     - name: Install macOS build dependencies
       if: runner.os == 'macOS'
       run: brew install ccache
@@ -54,7 +56,7 @@ jobs:
     - name: Install pyvista-build
       shell: bash
         # `--manylinux` mounts this installed package into the container.
-      run: python -m pip install --upgrade pip '.[tools]'
+      run: uv pip install --system '.[tools]'
 
       # An artifact, not actions/cache: the repository's shared cache quota evicts a
       # large entry before the next run can restore it.
@@ -101,6 +103,7 @@ jobs:
         # --manylinux (Linux) builds inside the manylinux_2_28 container.
       env:
         MANYLINUX: ${{ runner.os == 'Linux' && '--manylinux' || '' }}
+        FORCE_COLOR: '1'
       run: |
         pyvista-build vtk $MANYLINUX --yes --verbose \
           --build-dir vtk-build --compiler-cache auto --cache-dir compiler-cache
@@ -124,5 +127,5 @@ jobs:
     - name: Install the wheel and import it
       shell: bash
       run: |
-        python -m pip install vtk-build/wheelhouse/*.whl
+        uv pip install --system vtk-build/wheelhouse/*.whl
         python -c "import vtk; print(vtk.vtkVersion.GetVTKVersion())"
