@@ -1298,7 +1298,7 @@ class Builder:
             blocking.append(_tools.Tool(choice, (choice,), instructions=hint))
         if blocking:
             lines = [f'{t.name}: {t.instructions}' for t in blocking]
-            msg = 'Install these and run again:\n  ' + '\n  '.join(lines)
+            msg = 'Fix these and run again:\n  ' + '\n  '.join(lines)
             raise BuildError(msg)
 
         specs = [f'{t.pip}{t.spec}' for t in missing_pip] + missing_packages
