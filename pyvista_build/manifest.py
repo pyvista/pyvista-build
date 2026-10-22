@@ -30,7 +30,9 @@ TOP_LEVEL_KEYS = (
     'options',
     'hooks',
     'manylinux',
+    'defaults',
 )
+PYPROJECT_FILENAME = 'pyproject.toml'
 _CMAKE_ENTRY = re.compile(r'[A-Za-z_][A-Za-z0-9_.+-]*(:[A-Za-z]+)?=')
 
 
@@ -152,6 +154,7 @@ class Manifest:
     options: dict[str, Option]
     hooks: dict[str, tuple[str, ...]]
     manylinux_packages: tuple[str, ...] = ()
+    defaults: dict[str, Any] = field(default_factory=dict)
     path: Path | None = field(default=None, compare=False)
 
     def groups_for(self, os_name: str) -> list[Group]:
@@ -430,8 +433,48 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
         options=options,
         hooks=hooks,
         manylinux_packages=_str_list(manylinux, 'packages', where='[manylinux]'),
+        defaults=_table(data, 'defaults', where='manifest'),
         path=path,
     )
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    """Decode a TOML file, reporting a syntax error as a :class:`ManifestError`."""
+    try:
+        return tomllib.loads(path.read_text(encoding='utf-8'))
+    except tomllib.TOMLDecodeError as err:
+        msg = f'{path}: {err}'
+        raise ManifestError(msg) from None
+
+
+def read_defaults(directory: Path) -> list[tuple[Path, dict[str, Any]]]:
+    """Return the command-line defaults a directory's files set, most specific first.
+
+    Parameters
+    ----------
+    directory : Path
+        Directory holding ``pyvista-build.toml`` or ``pyproject.toml``.
+
+    Returns
+    -------
+    list[tuple[Path, dict[str, Any]]]
+        ``[defaults]`` from the manifest, then ``[tool.pyvista-build]`` from
+        ``pyproject.toml``, each with the file it came from. Missing files and tables
+        are skipped.
+
+    """
+    found: list[tuple[Path, dict[str, Any]]] = []
+    manifest = directory / MANIFEST_FILENAME
+    if manifest.is_file():
+        table = _read_toml(manifest).get('defaults')
+        if isinstance(table, dict):
+            found.append((manifest, table))
+    pyproject = directory / PYPROJECT_FILENAME
+    if pyproject.is_file():
+        table = _read_toml(pyproject).get('tool', {}).get('pyvista-build')
+        if isinstance(table, dict):
+            found.append((pyproject, table))
+    return found
 
 
 def load_manifest(path: Path, *, default_ref: str | None = None) -> Manifest:
@@ -451,11 +494,7 @@ def load_manifest(path: Path, *, default_ref: str | None = None) -> Manifest:
         Validated manifest.
 
     """
-    try:
-        data = tomllib.loads(path.read_text(encoding='utf-8'))
-    except tomllib.TOMLDecodeError as err:
-        msg = f'{path}: {err}'
-        raise ManifestError(msg) from None
+    data = _read_toml(path)
     if default_ref is not None and isinstance(data.get('backend'), dict):
         data['backend'].setdefault('default_ref', default_ref)
     try:

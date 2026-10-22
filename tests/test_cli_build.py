@@ -583,6 +583,55 @@ def test_cli_cache_dir_needs_compiler_cache(capsys: pytest.CaptureFixture):
     assert '--cache-dir needs --compiler-cache' in capsys.readouterr().err
 
 
+def test_cli_defaults_from_files(
+    captured: list[BuildConfig], tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    """Precedence: command line, then the manifest, then pyproject."""
+    (tmp_path / 'pyproject.toml').write_text(
+        '[tool.pyvista-build]\ncompiler-cache = "sccache"\njobs = 3\nbuild-type = "Debug"\n'
+    )
+    main('vtk')
+    assert captured[-1].compiler_cache == 'sccache'
+    assert captured[-1].jobs == 3
+    assert 'Defaults from pyproject.toml: compiler-cache=sccache' in capsys.readouterr().out
+    (tmp_path / 'pyvista-build.toml').write_text(
+        '[defaults]\ncompiler-cache = "ccache"\nopt = ["lto=0"]\nbuild-dir = "b"\n'
+    )
+    main('vtk --jobs 7')
+    config = captured[-1]
+    assert (config.compiler_cache, config.jobs, config.build_type) == ('ccache', 7, 'Debug')
+    assert config.options == ['lto=0']
+    assert config.build_dir == (tmp_path / 'b').resolve()
+
+
+def test_cli_defaults_from_source_dir(captured: list[BuildConfig], tmp_path: Path):
+    """--source names the directory the defaults are read from."""
+    source = tmp_path / 'src'
+    source.mkdir()
+    (source / 'pyproject.toml').write_text('[tool.pyvista-build]\njobs = 5\n')
+    main(f'vtk --source {source}')
+    assert captured[-1].jobs == 5
+    main(['vtk', f'--source={source}'])
+    assert captured[-1].jobs == 5
+    main('vtk')
+    assert captured[-1].jobs is None
+
+
+@pytest.mark.usefixtures('captured')
+@pytest.mark.parametrize(
+    ('text', 'match'),
+    [
+        ('[tool.pyvista-build]\nbogus = 1\n', 'bogus'),
+        ('[tool.pyvista-build\n', 'pyproject.toml'),
+    ],
+)
+def test_cli_defaults_errors(tmp_path: Path, capsys: pytest.CaptureFixture, text: str, match: str):
+    (tmp_path / 'pyproject.toml').write_text(text)
+    with pytest.raises(SystemExit):
+        main('vtk')
+    assert match in capsys.readouterr().err
+
+
 def test_cli_os_error(mocker: MockerFixture, tmp_path: Path, capsys: pytest.CaptureFixture):
     mocker.patch.object(Builder, 'build', side_effect=PermissionError('denied: [x]'))
     with pytest.raises(SystemExit):

@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shlex
+import sys
 from typing import Annotated
+from typing import Any
 from typing import NoReturn
 
 from cyclopts import App
 from cyclopts import Parameter
 from cyclopts import validators
+from cyclopts.config import Dict
 from rich import box
 from rich.console import Console
 from rich.markup import escape
@@ -20,11 +24,13 @@ from pyvista_build import Builder
 from pyvista_build import BuildError
 from pyvista_build import ManifestError
 from pyvista_build import __version__
+from pyvista_build.manifest import read_defaults
 from pyvista_build.manylinux import default_image
 from pyvista_build.phases import BUILD_TYPES
 from pyvista_build.phases import COMPILER_CACHES
 from pyvista_build.phases import BuildType
 from pyvista_build.phases import CompilerCache
+from pyvista_build.phases import short_path
 from pyvista_build.registry import known_backends
 from pyvista_build.tools import default_python
 
@@ -287,6 +293,11 @@ def build(
         manylinux=(manylinux_image or default_image()) if manylinux else None,
         python=str(python.absolute()) if python is not None else default_python(),
     )
+    for path, values in _defaults:
+        settings = ', '.join(f'{k}={v}' for k, v in values.items())
+        APP.console.print(
+            f'[dim]Defaults from {escape(short_path(path))}: {escape(settings)}[/dim]'
+        )
     try:
         Builder(config, console=APP.console).build()
     except (BuildError, ManifestError, OSError) as err:
@@ -296,8 +307,22 @@ def build(
         raise SystemExit(130) from None
 
 
+#: Files the current run read its option defaults from, with the values each set.
+_defaults: list[tuple[Path, dict[str, Any]]] = []
+
+
+def _source_dir(tokens: list[str]) -> Path:
+    """Return the ``--source`` directory named on the command line, else the working one."""
+    for i, token in enumerate(tokens):
+        if token.startswith('--source='):
+            return Path(token.partition('=')[2])
+        if token == '--source' and i + 1 < len(tokens):
+            return Path(tokens[i + 1])
+    return Path.cwd()
+
+
 def main(argv: list[str] | str | None = None) -> None:
-    """Run the command line.
+    """Run the command line with the option defaults the project's files set.
 
     Parameters
     ----------
@@ -305,4 +330,18 @@ def main(argv: list[str] | str | None = None) -> None:
         Command-line arguments. Defaults to ``sys.argv[1:]``.
 
     """
-    APP(tokens=argv)
+    if argv is None:
+        tokens = sys.argv[1:]
+    elif isinstance(argv, str):
+        tokens = shlex.split(argv, posix=os.name != 'nt')
+    else:
+        tokens = list(argv)
+    try:
+        _defaults[:] = read_defaults(_source_dir(tokens))
+    except ManifestError as err:
+        print_error_and_exit(escape(str(err)))
+    APP.config = tuple(
+        Dict(values, source=short_path(path), use_commands_as_keys=False)
+        for path, values in _defaults
+    )
+    APP(tokens=tokens)

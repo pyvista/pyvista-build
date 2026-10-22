@@ -15,6 +15,7 @@ from pyvista_build.manifest import cmake_entries
 from pyvista_build.manifest import cmake_unset
 from pyvista_build.manifest import option_environment
 from pyvista_build.manifest import parse_manifest
+from pyvista_build.manifest import read_defaults
 from pyvista_build.manifest import resolve_groups
 from pyvista_build.manifest import resolve_options
 from pyvista_build.registry import find_manifest
@@ -242,6 +243,32 @@ def test_parse_manifest_errors(patch, match):
     data = dict(MINIMAL_MANIFEST, **patch)
     with pytest.raises(ManifestError, match=match):
         parse_manifest(data)
+
+
+def test_parse_manifest_defaults():
+    data = dict(MINIMAL_MANIFEST, defaults={'compiler-cache': 'ccache', 'opt': ['lto=0']})
+    assert parse_manifest(data).defaults == {'compiler-cache': 'ccache', 'opt': ['lto=0']}
+    assert parse_manifest(MINIMAL_MANIFEST).defaults == {}
+    with pytest.raises(ManifestError, match="'defaults' must be a table"):
+        parse_manifest(dict(MINIMAL_MANIFEST, defaults=['x']))
+
+
+def test_read_defaults(tmp_path: Path):
+    """Both files are optional, the manifest comes first, and other tables are ignored."""
+    assert read_defaults(tmp_path) == []
+    (tmp_path / 'pyproject.toml').write_text('[tool.other]\nx = 1\n')
+    assert read_defaults(tmp_path) == []
+    (tmp_path / 'pyproject.toml').write_text('[tool.pyvista-build]\njobs = 2\n')
+    (tmp_path / 'pyvista-build.toml').write_text('manifest_version = 1\n[defaults]\njobs = 1\n')
+    assert read_defaults(tmp_path) == [
+        (tmp_path / 'pyvista-build.toml', {'jobs': 1}),
+        (tmp_path / 'pyproject.toml', {'jobs': 2}),
+    ]
+    (tmp_path / 'pyvista-build.toml').write_text('manifest_version = 1\n')
+    assert read_defaults(tmp_path) == [(tmp_path / 'pyproject.toml', {'jobs': 2})]
+    (tmp_path / 'pyvista-build.toml').write_text('[defaults\n')
+    with pytest.raises(ManifestError, match=r'pyvista-build\.toml'):
+        read_defaults(tmp_path)
 
 
 def test_manifest_version_is_required():

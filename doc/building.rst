@@ -179,6 +179,11 @@ wheel at the end.
     pyvista-build vtk --ref master --build-type RelWithDebInfo --jobs 8 --yes
     pyvista-build vtk --dry-run
 
+A project that always builds the same way keeps those flags in a
+``[defaults]`` table of its manifest, or under ``[tool.pyvista-build]`` in
+its ``pyproject.toml``, and the command line shrinks to the backend name.
+:doc:`manifest` has the details.
+
 Developer Loop
 ~~~~~~~~~~~~~~
 The build tree is kept between runs. Edit files under ``vtk-build/src``
