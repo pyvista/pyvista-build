@@ -2267,6 +2267,20 @@ def test_cache_stats_in_job_summary(tmp_path: Path, mocker: MockerFixture, monke
     assert summary.read_text() == '# before\n## ccache\n```\nHits: 3\n```\n'
 
 
+def test_cache_stats_tool_missing(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """A cache tool that cannot start is reported and the summary is left alone."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    summary = tmp_path / 'summary.md'
+    summary.write_text('# before\n')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    mocker.patch.object(phases.subprocess, 'run', side_effect=OSError('gone'))
+    builder._cache_stats()
+    assert 'gone' in builder.console.export_text()
+    assert summary.read_text() == '# before\n'
+
+
 def test_cache_stats_without_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
     """Without GITHUB_STEP_SUMMARY the statistics are only printed."""
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
