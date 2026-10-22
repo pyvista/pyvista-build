@@ -220,6 +220,29 @@ Exactly one of ``cmake`` and ``env`` is set.
     [manylinux]
     packages = ["libX11-devel", "libXcursor-devel", "mesa-libGL-devel"]
 
+``[repair]``
+------------
+``strip``
+    Strip the local symbols from every library in the repaired wheel, the
+    extension modules included. Defaults to ``false``. On Linux
+    ``auditwheel repair`` runs with ``--strip``. On macOS every Mach-O
+    library is stripped with ``strip -x``, signed again ad-hoc with ``codesign``, and
+    the wheel's ``RECORD`` is recomputed. On Windows nothing is stripped:
+    ``delvewheel`` has no symbol strip.
+
+``linux``, ``macos``, ``windows``
+    Extra arguments for that operating system's repair tool
+    (``auditwheel``, ``delocate-wheel`` or ``delvewheel``), inserted
+    before the wheel path. Each defaults to an empty list. Inside a
+    manylinux container a ``--plat`` in ``linux`` replaces the one the
+    build passes for the image.
+
+.. code-block:: toml
+
+    [repair]
+    strip = true
+    windows = ["--no-mangle-all"]
+
 .. _hooks:
 
 ``[hooks]``

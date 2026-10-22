@@ -40,6 +40,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import manylinux as _manylinux
+from . import repair as _repair
 from . import tools as _tools
 from .manifest import _CMAKE_ENTRY
 from .manifest import MANIFEST_FILENAME
@@ -2133,11 +2134,17 @@ class Builder:
         """
         cfg = self.config
         out = str(cfg.wheelhouse)
+        extra = self.manifest.repair_args[cfg.os_name]
         if cfg.os_name == 'linux':
-            return ['auditwheel', 'repair', str(wheel), '-w', out], {}
+            strip = ['--strip'] if self.manifest.repair_strip else []
+            plat = ['--plat', _manylinux.container_plat()] if cfg.in_container else []
+            return ['auditwheel', 'repair', *strip, *plat, *extra, str(wheel), '-w', out], {}
         if cfg.os_name == 'windows':
             bin_dir = str(cfg.cmake_dir / 'bin')
-            return ['delvewheel', 'repair', '--add-path', bin_dir, '-w', out, str(wheel)], {}
+            return (
+                ['delvewheel', 'repair', '--add-path', bin_dir, '-w', out, *extra, str(wheel)],
+                {},
+            )
         dylibs = cfg.cmake_dir.rglob('libvtksys*.dylib')
         libdir = next((p.parent for p in dylibs), cfg.cmake_dir / 'lib')
         arch = platform.machine()
@@ -2149,6 +2156,7 @@ class Builder:
                 '-w',
                 out,
                 *(['-v'] if self.config.verbose else []),
+                *extra,
                 str(wheel),
             ],
             {'DYLD_LIBRARY_PATH': str(libdir)},
@@ -2172,10 +2180,11 @@ class Builder:
             )
         wheel = self.wheel or cfg.dist_dir / f'{cfg.backend}-*.whl'
         cmd, env = self.repair_command(wheel)
+        strip = self.manifest.repair_strip and cfg.os_name == 'macos'
         stamp = cfg.wheelhouse / _REPAIR_STAMP
         fingerprint = None
         if self.wheel is not None and not cfg.dry_run:
-            fingerprint = _wheel_fingerprint(self.wheel, cmd)
+            fingerprint = _wheel_fingerprint(self.wheel, [*cmd, *(['strip'] if strip else [])])
             repaired = _stamped_wheel(stamp, fingerprint)
             if repaired is not None:
                 self.say(
@@ -2188,11 +2197,24 @@ class Builder:
             self.say('Skipped.')
             return
         self.run(cmd, env=env)
-        if not cfg.dry_run:
-            self.wheel = self._newest_wheel(cfg.wheelhouse)
-            if fingerprint is not None and self.wheel is not None:
-                record = {'fingerprint': fingerprint, 'wheel': self.wheel.name}
-                stamp.write_text(json.dumps(record), encoding='utf-8')
+        if cfg.dry_run:
+            if strip:
+                self.say(
+                    '[cyan]$ strip -x[/cyan] and [cyan]codesign --force --sign -[/cyan] on every '
+                    'library in the repaired wheel'
+                )
+            return
+        repaired = cast('Path', self._newest_wheel(cfg.wheelhouse))
+        self.wheel = repaired
+        if strip:
+            stripped = _repair.strip_wheel(repaired)
+            self.say(
+                f'Stripped and re-signed {len(stripped)} libraries in '
+                f'[bold]{escape(short_path(repaired))}[/bold].'
+            )
+        if fingerprint is not None:
+            record = {'fingerprint': fingerprint, 'wheel': repaired.name}
+            stamp.write_text(json.dumps(record), encoding='utf-8')
 
     def install_command(self, wheel: Path) -> list[str] | None:
         """Assemble the command that installs a wheel into this interpreter.

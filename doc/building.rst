@@ -152,6 +152,8 @@ Make the wheel installable outside the build tree.
 
 - Bundles the libraries the wheel links against and sets its platform tag, so
   it installs outside the build tree and on other machines.
+- A manifest's ``[repair]`` table can ask for the bundled libraries to be
+  stripped and pass extra arguments to the repair tool.
 - A rerun reuses the repaired wheel when the built wheel's contents have not
   changed.
 - ``--no-repair`` skips the step.
@@ -342,8 +344,9 @@ What happens:
 - The container installs VTK's build dependencies and this package's
   requirements, mounts the ``pyvista-build`` you are running read-only, and
   runs the remaining steps with the source and ``./vtk-build`` mounted.
-- The repair step runs ``auditwheel`` there, which gives the wheel its
-  ``manylinux`` tag and puts it in ``vtk-build/wheelhouse``.
+- The repair step runs ``auditwheel`` there with ``--plat`` set to the
+  image's policy (its ``AUDITWHEEL_PLAT``), which gives the wheel the image's
+  tag and puts it in ``vtk-build/wheelhouse``.
 - Files written by the container are handed back to your user, even when
   the build fails.
 - On a Linux host the install step runs afterwards. On macOS and Windows the
