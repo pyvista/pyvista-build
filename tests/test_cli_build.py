@@ -719,8 +719,8 @@ def test_describe_defaults():
 
 def test_main_switches_streams_to_utf8(monkeypatch: pytest.MonkeyPatch):
     """A cp1252 stdout and stderr carry a spinner frame as UTF-8 once main runs."""
-    out = TextIOWrapper(BytesIO(), encoding='cp1252')
-    err = TextIOWrapper(BytesIO(), encoding='cp1252')
+    out = TextIOWrapper(BytesIO(), encoding='cp1252', newline='\n')
+    err = TextIOWrapper(BytesIO(), encoding='cp1252', newline='\n')
     monkeypatch.setattr(sys, 'stdout', out)
     monkeypatch.setattr(sys, 'stderr', err)
     monkeypatch.setattr(cli.APP, 'version', 'pyvista-build ⠋')
