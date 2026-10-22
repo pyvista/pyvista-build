@@ -88,5 +88,5 @@ API Reference
 -------------
 Show the output from ``pyvista-build --help``.
 
-.. command-output:: FORCE_COLOR=1 COLUMNS=90 pyvista-build --help
+.. program-output:: FORCE_COLOR=1 COLUMNS=90 pyvista-build --help
    :shell:
