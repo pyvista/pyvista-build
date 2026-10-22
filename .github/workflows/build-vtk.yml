@@ -96,7 +96,7 @@ jobs:
 
     - name: Set up sccache (Windows)
       if: runner.os == 'Windows'
-      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba   # v0.0.9
+      uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba   # v0.0.11
 
     - name: Build the VTK wheel
       shell: bash

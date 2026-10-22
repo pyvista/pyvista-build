@@ -62,19 +62,10 @@ def _config(tmp_path: Path, **kwargs) -> BuildConfig:
     return BuildConfig(**defaults)
 
 
-@pytest.fixture(autouse=True)
-def _no_compiler_cache_env(monkeypatch: pytest.MonkeyPatch):
-    """Keep the developer's compiler cache settings out of every test."""
-    for name in (
-        'CCACHE_BASEDIR',
-        'CCACHE_COMPILERCHECK',
-        'CCACHE_CONFIGPATH',
-        'CCACHE_DIR',
-        'CCACHE_LOGFILE',
-        'CCACHE_NOHASHDIR',
-        'SCCACHE_DIR',
-    ):
-        monkeypatch.delenv(name, raising=False)
+def _stamp_repair(wheel: Path) -> None:
+    """Record a wheel as the repair result, as the container does."""
+    record = {'fingerprint': 'abc', 'wheel': wheel.name}
+    (wheel.parent / phases._REPAIR_STAMP).write_text(json.dumps(record), encoding='utf-8')
 
 
 @pytest.fixture
@@ -1389,8 +1380,11 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
         env={
             'CCACHE_MAXSIZE': '1G',
             'CCACHE_DIR': '/h',
+            'COLUMNS': '80',
             'FORCE_COLOR': '1',
+            'NO_COLOR': '1',
             'PATH': '/bin',
+            'TERM': 'xterm',
             'SCCACHE_DIR': '/x',
         },
     )
@@ -1400,12 +1394,43 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     assert f'{tmp_path / "src"}:/src' in cmd
     assert f'{tmp_path / "pv"}:/opt/pyvista-build-host/pyvista_build:ro' in cmd
     assert cmd[cmd.index('--env') : cmd.index('--env') + 2] == ['--env', 'CCACHE_MAXSIZE']
-    assert cmd[cmd.index('FORCE_COLOR') - 1] == '--env'
-    assert cmd.count('--env') == 2
+    forwarded = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == '--env']
+    assert forwarded == ['CCACHE_MAXSIZE', 'COLUMNS', 'FORCE_COLOR', 'NO_COLOR', 'TERM']
     assert cmd[-4:] == ['img', 'bash', '-c', 'true']
     mocker.patch.object(manylinux.os, 'getuid', return_value=501, create=True)
     mocker.patch.object(manylinux.os, 'getgid', return_value=20, create=True)
     assert manylinux.file_owner() == '501:20'
+
+
+def test_unusable_python(tmp_path: Path):
+    """A target Python that cannot run is reported as a build error."""
+    with pytest.raises(BuildError, match=r'Cannot use .* as the target Python'):
+        Builder(_config(tmp_path, python=str(tmp_path / 'nope')), Console(quiet=True))
+
+
+def test_build_in_manylinux_reuses_the_repaired_wheel(tmp_path: Path, mocker: MockerFixture):
+    """The host reads the wheel from the container's repair stamp, so a rerun finds it."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    mocker.patch.object(manylinux, 'package_dir', return_value=tmp_path / 'pv')
+    mocker.patch.object(manylinux, 'requirements', return_value=[])
+    mocker.patch.object(tools, 'pip_install_command', return_value=['pip', 'install'])
+    src = tmp_path / 'src'
+    (src / '.git').mkdir(parents=True)
+    cfg = _config(tmp_path, dry_run=False, manylinux='img', source=src, repair=True, yes=True)
+    builder = Builder(cfg, Console(quiet=True))
+    mocker.patch.object(
+        subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout='')
+    )
+    mocker.patch.object(builder, 'run')
+    mocker.patch.object(builder, 'phase_install')
+    cfg.wheelhouse.mkdir(parents=True)
+    with pytest.raises(BuildError, match='No repaired wheel recorded'):
+        builder.build()
+    wheel = cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-manylinux_2_28_x86_64.whl'
+    wheel.write_text('')
+    os.utime(wheel, (500.0, 500.0))
+    _stamp_repair(wheel)
+    assert builder.build() == wheel
 
 
 def test_build_in_manylinux(tmp_path: Path, mocker: MockerFixture):
@@ -1514,7 +1539,9 @@ def test_build_in_manylinux(tmp_path: Path, mocker: MockerFixture):
     run = mocker.patch.object(builder, 'run')
     install = mocker.patch.object(builder, 'phase_install')
     cfg.wheelhouse.mkdir(parents=True)
-    (cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-manylinux_2_28_x86_64.whl').write_text('')
+    wheel = cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-manylinux_2_28_x86_64.whl'
+    wheel.write_text('')
+    _stamp_repair(wheel)
     builder.build()
     assert f'{cfg.build_dir / "compiler-cache"}:/cache' in run.call_args.args[0]
     assert not install.called
@@ -1671,7 +1698,9 @@ def test_build_in_manylinux_forwarded_args(tmp_path: Path, mocker: MockerFixture
     run = mocker.patch.object(builder, 'run')
     mocker.patch.object(builder, 'phase_install')
     cfg.wheelhouse.mkdir(parents=True)
-    (cfg.wheelhouse / 'vtk-1-cp314-cp314-manylinux_2_28_x86_64.whl').write_text('')
+    wheel = cfg.wheelhouse / 'vtk-1-cp314-cp314-manylinux_2_28_x86_64.whl'
+    wheel.write_text('')
+    _stamp_repair(wheel)
     builder.build()
     commands = [c.args[0] for c in run.call_args_list]
     assert commands[0][-2:] == ['https://x/vtk.git', str(cfg.src_dir)]
@@ -1823,7 +1852,7 @@ def test_paths_link_only_on_a_real_terminal(tmp_path: Path):
             return True
 
     for file, linked in [(StringIO(), False), (Terminal(), True)]:
-        console = Console(file=file, force_terminal=True, width=200)
+        console = Console(file=file, force_terminal=True, width=200, _environ={})
         Builder(_config(tmp_path), console).say('Wheel: /a/b')
         assert '\x1b[' in file.getvalue()
         assert ('\x1b]8;' in file.getvalue()) == (linked and os.name != 'nt')
@@ -2234,7 +2263,8 @@ def test_display_command(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """A program found on PATH shows by name, and paths in the arguments are shortened."""
     monkeypatch.chdir(tmp_path)
     shown = phases._display_command(
-        [sys.executable, '-m', 'pip', 'install', str(tmp_path / 'w.whl')]
+        [sys.executable, '-m', 'pip', 'install', str(tmp_path / 'w.whl')],
+        env={'PATH': str(Path(sys.executable).parent)},
     )
     assert shown.startswith(Path(sys.executable).name)
     assert str(tmp_path) not in shown
@@ -2255,7 +2285,7 @@ def test_display_command_wraps():
 def test_item_hanging_indent(tmp_path: Path):
     """Wrapped list items continue aligned after the marker, without trailing spaces."""
     out = StringIO()
-    build = Builder(_config(tmp_path), console=Console(file=out, width=30))
+    build = Builder(_config(tmp_path), console=Console(file=out, width=30, _environ={}))
     build.item('1.', 'Tools: check git, cmake, ninja and a compiler')
     assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
 
@@ -2288,6 +2318,26 @@ def test_cache_stats_tool_missing(tmp_path: Path, mocker: MockerFixture, monkeyp
     mocker.patch.object(phases.subprocess, 'run', side_effect=OSError('gone'))
     builder._cache_stats()
     assert 'gone' in builder.console.export_text()
+    assert summary.read_text() == '# before\n'
+
+
+def test_cache_stats_tool_fails(tmp_path: Path, mocker: MockerFixture, monkeypatch):
+    """A cache tool that exits non-zero is reported and the summary is left alone."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    summary = tmp_path / 'summary.md'
+    summary.write_text('# before\n')
+    monkeypatch.setenv('GITHUB_STEP_SUMMARY', str(summary))
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    mocker.patch.object(
+        phases.subprocess,
+        'run',
+        return_value=subprocess.CompletedProcess([], 1, '', 'ccache: error: no cache dir\n'),
+    )
+    builder._cache_stats()
+    out = builder.console.export_text()
+    assert 'no cache dir' in out
+    assert 'ccache exited with status 1' in out
     assert summary.read_text() == '# before\n'
 
 

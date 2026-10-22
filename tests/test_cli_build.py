@@ -201,6 +201,29 @@ def test_interactive_configure_flags(tmp_path: Path, mocker: MockerFixture):
 
 
 @pytest.mark.usefixtures('no_tools')
+def test_interactive_configure_missing_cache_tool(tmp_path: Path, mocker: MockerFixture):
+    """A compiler cache typed at the prompt must be on PATH, as on the command line."""
+    mocker.patch.object(phases.sys.stdin, 'isatty', return_value=True)
+    answers = iter(['y', 'y', '--compiler-cache sccache', ''])
+    mocker.patch.object(
+        phases.Prompt, 'ask', side_effect=lambda *_, default='', **__: next(answers) or default
+    )
+    mocker.patch.object(tools, 'compiler_cache_tool', return_value=None)
+    console = Console(record=True, width=4000, force_terminal=False)
+    builder = Builder(
+        _config(tmp_path, dry_run=False, interactive=True, compiler_cache='none'), console
+    )
+    mocker.patch.object(builder, 'run')
+    builder.phase_source()
+    builder.phase_tools()
+    builder.phase_groups()
+    builder.phase_configure()
+    assert 'sccache was not found on PATH' in console.export_text()
+    assert builder.config.compiler_cache == 'none'
+    assert builder.launcher is None
+
+
+@pytest.mark.usefixtures('no_tools')
 def test_interactive_configure_walk(tmp_path: Path, mocker: MockerFixture):
     """Answering n at the configure prompt asks for each setting in turn."""
     mocker.patch.object(phases.sys.stdin, 'isatty', return_value=True)
@@ -494,6 +517,13 @@ def test_cli_defaults(captured: list[BuildConfig], tmp_path: Path):
         python=tools.default_python(),
     )
     assert captured[-1] == expected
+    assert captured[-1].compiler_cache == 'auto'
+
+
+def test_cli_cache_dir_alone(captured: list[BuildConfig], tmp_path: Path):
+    """The default compiler cache takes a cache directory without any other flag."""
+    main('vtk --dry-run --cache-dir cache')
+    assert captured[-1].cache_dir == (tmp_path / 'cache').resolve()
 
 
 @pytest.mark.parametrize(
@@ -584,10 +614,10 @@ def test_cli_manylinux_image_needs_manylinux(capsys: pytest.CaptureFixture):
     assert '--manylinux-image needs --manylinux' in capsys.readouterr().err
 
 
-def test_cli_cache_dir_needs_compiler_cache(capsys: pytest.CaptureFixture):
+def test_cli_cache_dir_rejected_without_compiler_cache(capsys: pytest.CaptureFixture):
     with pytest.raises(SystemExit):
         main('vtk --dry-run --compiler-cache none --cache-dir cache')
-    assert '--cache-dir needs --compiler-cache' in capsys.readouterr().err
+    assert '--cache-dir has no effect with --compiler-cache none' in capsys.readouterr().err
 
 
 def test_cli_os_error(mocker: MockerFixture, tmp_path: Path, capsys: pytest.CaptureFixture):

@@ -187,13 +187,15 @@ def _wheel_fingerprint(wheel: Path, cmd: Sequence[str]) -> str:
     return hashlib.sha256(json.dumps([entries, list(cmd)]).encode()).hexdigest()
 
 
-def _repaired_wheel(stamp: Path, fingerprint: str) -> Path | None:
-    """Return the wheel an earlier repair made from the same input, if it is still there."""
+def _stamped_wheel(stamp: Path, fingerprint: str | None = None) -> Path | None:
+    """Return the wheel the repair stamp names, made from ``fingerprint`` when given."""
     try:
         record = json.loads(stamp.read_text(encoding='utf-8'))
     except (OSError, ValueError):
         return None
-    if not isinstance(record, dict) or record.get('fingerprint') != fingerprint:
+    if not isinstance(record, dict):
+        return None
+    if fingerprint is not None and record.get('fingerprint') != fingerprint:
         return None
     wheel = stamp.parent / str(record.get('wheel', ''))
     return wheel if wheel.is_file() else None
@@ -1903,6 +1905,12 @@ class Builder:
                 if value not in COMPILER_CACHES:
                     msg = f'--compiler-cache must be one of {", ".join(COMPILER_CACHES)}.'
                     raise BuildError(msg)
+                if value not in ('auto', 'none') and not _tools.compiler_cache_tool(
+                    value, cfg.os_name, self.env
+                ):
+                    hint = _tools.compiler_cache_instructions(cfg.os_name, value)
+                    msg = f'{value} was not found on PATH. {hint}'
+                    raise BuildError(msg)
                 cfg.compiler_cache = value
                 self.launcher = None
                 self._activate_compiler_cache()
@@ -1967,8 +1975,15 @@ class Builder:
         except OSError as exc:
             self.say(f'[red]{escape(str(exc))}[/red]')
             return
-        text = stats.stdout.rstrip()
-        self.console.out(text, highlight=False)
+        text = (stats.stdout or stats.stderr).rstrip()
+        if text:
+            self.console.out(text, highlight=False)
+        if stats.returncode != 0:
+            self.say(
+                f'[red]{cmd[0]} exited with status {stats.returncode}; nothing was added to '
+                'the job summary.[/red]'
+            )
+            return
         with Path(summary).open('a', encoding='utf-8') as handle:
             handle.write(f'## {self.launcher.name}\n```\n{text}\n```\n')
 
@@ -2136,7 +2151,7 @@ class Builder:
         fingerprint = None
         if self.wheel is not None and not cfg.dry_run:
             fingerprint = _wheel_fingerprint(self.wheel, cmd)
-            repaired = _repaired_wheel(stamp, fingerprint)
+            repaired = _stamped_wheel(stamp, fingerprint)
             if repaired is not None:
                 self.say(
                     f'Skipped: [bold]{escape(short_path(repaired))}[/bold] was repaired from '
@@ -2274,8 +2289,7 @@ class Builder:
         started = time.time()
         self.run(cmd, passthrough=True)
         if not cfg.dry_run:
-            folder = cfg.wheelhouse if cfg.repair else cfg.dist_dir
-            self.wheel = self._newest_wheel(folder, since=started)
+            self.wheel = self._container_wheel(started)
         if cfg.os_name == 'linux':
             self.phase_install()
         else:
@@ -2284,6 +2298,17 @@ class Builder:
             )
         self.summary()
         return self.wheel
+
+    def _container_wheel(self, started: float) -> Path | None:
+        """Return the wheel the container built: the repair stamp's, else the newest."""
+        cfg = self.config
+        if not cfg.repair:
+            return self._newest_wheel(cfg.dist_dir, since=started)
+        wheel = _stamped_wheel(cfg.wheelhouse / _REPAIR_STAMP)
+        if wheel is None:
+            msg = f'No repaired wheel recorded in {cfg.wheelhouse}.'
+            raise BuildError(msg)
+        return wheel
 
     def container_config(self) -> dict[str, object]:
         """Return the container's build configuration, with host paths mapped to the mounts.

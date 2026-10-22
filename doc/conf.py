@@ -38,6 +38,7 @@ html_context = {
 }
 html_show_sourcelink = False
 html_baseurl = 'https://pyvista.github.io/pyvista-build/'
+notfound_urls_prefix = '/pyvista-build/'
 
 html_theme_options = {
     'show_prev_next': False,
