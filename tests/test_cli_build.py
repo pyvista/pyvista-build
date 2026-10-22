@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import fields
+from io import BytesIO
+from io import TextIOWrapper
 from pathlib import Path
 import subprocess
 import sys
@@ -713,6 +715,16 @@ def test_describe_defaults():
         == 'Defaults ci from pyvista-build.toml: yes, source=., opt=lto=0,gate_o2=1, '
         'repair=false, jobs=2'
     )
+
+
+def test_main_switches_streams_to_utf8(monkeypatch: pytest.MonkeyPatch):
+    """A cp1252 console is reconfigured to UTF-8 before anything is printed."""
+    out = TextIOWrapper(BytesIO(), encoding='cp1252')
+    monkeypatch.setattr(sys, 'stdout', out)
+    monkeypatch.setattr(sys, 'stderr', TextIOWrapper(BytesIO(), encoding='utf-8'))
+    main('--version')
+    assert out.encoding == 'utf-8'
+    assert sys.stderr.encoding == 'utf-8'
 
 
 def test_user_options():

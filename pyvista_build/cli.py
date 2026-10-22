@@ -526,6 +526,14 @@ def _defaults_tokens(
     return expand_defaults(name, kept, where=where, base=path.parent)
 
 
+def _utf8_streams() -> None:
+    """Switch stdout and stderr to UTF-8 so the progress output survives a cp1252 console."""
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, 'encoding', None) or '').lower().replace('-', '')
+        if encoding != 'utf8' and hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8', errors='replace')
+
+
 def main(argv: list[str] | str | None = None) -> None:
     """Run the command line, expanding the ``--defaults`` set first.
 
@@ -535,6 +543,7 @@ def main(argv: list[str] | str | None = None) -> None:
         Command-line arguments. Defaults to ``sys.argv[1:]``.
 
     """
+    _utf8_streams()
     if isinstance(argv, str):
         argv = shlex.split(argv, posix=os.name != 'nt')
     _, bound, _ = APP.parse_args(argv)
