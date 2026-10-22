@@ -171,7 +171,14 @@ def test_interactive_configure_flags(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(tools, 'compiler_cache_tool', return_value=ccache)
     console = Console(record=True, width=4000, force_terminal=False)
     builder = Builder(
-        _config(tmp_path, dry_run=False, interactive=True, version_suffix='dev0+gabc'), console
+        _config(
+            tmp_path,
+            dry_run=False,
+            interactive=True,
+            version_suffix='dev0+gabc',
+            compiler_cache='none',
+        ),
+        console,
     )
     run = mocker.patch.object(builder, 'run')
     builder.phase_source()
@@ -493,7 +500,7 @@ def test_cli_defaults(captured: list[BuildConfig], tmp_path: Path):
     ('args', 'field', 'value'),
     [
         ('--no-repair', 'repair', False),
-        ('--compiler-cache auto', 'compiler_cache', 'auto'),
+        ('--compiler-cache none', 'compiler_cache', 'none'),
         ('--build-type Debug', 'build_type', 'Debug'),
         ('--jobs 3', 'jobs', 3),
         ('--clean', 'clean', True),
@@ -579,7 +586,7 @@ def test_cli_manylinux_image_needs_manylinux(capsys: pytest.CaptureFixture):
 
 def test_cli_cache_dir_needs_compiler_cache(capsys: pytest.CaptureFixture):
     with pytest.raises(SystemExit):
-        main('vtk --dry-run --cache-dir cache')
+        main('vtk --dry-run --compiler-cache none --cache-dir cache')
     assert '--cache-dir needs --compiler-cache' in capsys.readouterr().err
 
 

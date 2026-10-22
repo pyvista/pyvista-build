@@ -148,9 +148,9 @@ def build(
         CompilerCache,
         Parameter(
             help=f'Compiler cache: {_choices(COMPILER_CACHES)}. ``auto`` uses whichever is on '
-            'PATH.'
+            'PATH, ``none`` builds without one.'
         ),
-    ] = 'none',
+    ] = 'auto',
     cache_dir: Annotated[
         Path | None,
         Parameter(

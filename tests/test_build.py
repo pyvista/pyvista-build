@@ -139,6 +139,7 @@ def test_dry_run_flags(tmp_path: Path):
         version_suffix='',
         options=['smp=TBB'],
         repair=False,
+        compiler_cache='none',
     )
     Builder(cfg, console).build()
     out = console.export_text()
@@ -1664,6 +1665,7 @@ def test_build_in_manylinux_forwarded_args(tmp_path: Path, mocker: MockerFixture
         ref='v1',
         minimal=True,
         repair=True,
+        compiler_cache='none',
     )
     builder = Builder(cfg, Console(quiet=True))
     run = mocker.patch.object(builder, 'run')
@@ -1749,6 +1751,7 @@ def test_plan(tmp_path: Path):
         defines=['X=1'],
         without=['web'],
         ref='v9.7.0',
+        compiler_cache='none',
     )
     plan = dict(Builder(cfg, Console(quiet=True)).plan())
     assert list(plan) == [

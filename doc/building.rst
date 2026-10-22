@@ -57,8 +57,8 @@ Ensure the tools the build needs are available.
   ``--yes`` the command stops instead of installing.
 - A missing compiler stops with instructions for your operating system. On
   Windows, Visual Studio's build environment is imported automatically.
-- ``--compiler-cache auto`` adds a compiler cache (``ccache`` or ``sccache``)
-  when one is on ``PATH``.
+- A compiler cache (``ccache`` or ``sccache``) is used when one is on
+  ``PATH``. ``--compiler-cache none`` builds without one.
 - When the cloned source asks for other ``cmake`` or ``ninja`` versions than
   the ones checked, as on a first ``cvista`` build, those are checked again
   after step 2.
@@ -211,8 +211,8 @@ it short: a warm cache turns a build of hours into minutes.
 - Pass ``--yes`` and ``--verbose``, as in `Scripted Use`_.
 - ``pip install pyvista-build[tools]`` installs every tool the build gets
   from PyPI up front, so the tools step has nothing left to install.
-- ``--compiler-cache auto`` uses ``ccache`` or ``sccache``, whichever is on
-  ``PATH``. Install ``ccache`` on Linux and macOS (``apt-get install ccache``,
+- The build uses ``ccache`` or ``sccache``, whichever is on ``PATH``.
+  Install ``ccache`` on Linux and macOS (``apt-get install ccache``,
   ``brew install ccache``) and set up ``sccache`` on Windows, where MSVC
   needs it (`mozilla-actions/sccache-action
   <https://github.com/mozilla-actions/sccache-action>`_).
@@ -242,7 +242,7 @@ it short: a warm cache turns a build of hours into minutes.
 
 .. code-block:: bash
 
-    pyvista-build vtk --yes --verbose --compiler-cache auto --cache-dir compiler-cache
+    pyvista-build vtk --yes --verbose --cache-dir compiler-cache
 
 `This repository's own workflow
 <https://github.com/pyvista/pyvista-build/blob/main/.github/workflows/build-vtk.yml>`_
@@ -343,10 +343,9 @@ What happens:
 
 Caches and limits:
 
-- With ``--compiler-cache auto`` or ``ccache`` the container installs
-  ``ccache`` and keeps its cache between runs in ``vtk-build/compiler-cache``,
-  or in ``--cache-dir`` or ``$CCACHE_DIR`` when set. ``sccache`` is not
-  available there.
+- The container installs ``ccache`` and keeps its cache between runs in
+  ``vtk-build/compiler-cache``, or in ``--cache-dir`` or ``$CCACHE_DIR`` when
+  set. ``--compiler-cache none`` skips it. ``sccache`` is not available there.
 - ``pip`` keeps its cache in ``vtk-build/pip-cache``.
 - A build tree configured inside the container cannot be continued outside
   it.
@@ -386,10 +385,8 @@ here or in CI:
   each object file keyed by its inputs, so rebuilding after an edit or a
   reconfigure compiles again only what changed. ``ccache`` is the usual
   choice on Linux and macOS; ``sccache`` is the one that supports MSVC
-  on Windows. ``--compiler-cache auto`` uses whichever is on ``PATH``.
-  Off by default: within one build tree Ninja already rebuilds only what
-  changed, so a cache pays off when the tree is built from scratch, as in
-  CI.
+  on Windows. The build uses whichever is on ``PATH``, and
+  ``--compiler-cache none`` turns it off.
 - **Wheel repair tools** copy the shared libraries a wheel depends on
   into the wheel itself and set the platform tag, so it installs on
   other machines: `auditwheel
