@@ -54,7 +54,7 @@ jobs:
     - name: Install pyvista-build
       shell: bash
         # `--manylinux` mounts this installed package into the container.
-      run: python -m pip install --upgrade pip .
+      run: python -m pip install --upgrade pip '.[tools]'
 
       # An artifact, not actions/cache: the repository's shared cache quota evicts a
       # large entry before the next run can restore it.

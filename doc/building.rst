@@ -209,6 +209,8 @@ A CI job builds from scratch every time, so a compiler cache is what keeps
 it short: a warm cache turns a build of hours into minutes.
 
 - Pass ``--yes`` and ``--verbose``, as in `Scripted Use`_.
+- ``pip install pyvista-build[tools]`` installs every tool the build gets
+  from PyPI up front, so the tools step has nothing left to install.
 - ``--compiler-cache auto`` uses ``ccache`` or ``sccache``, whichever is on
   ``PATH``. Install ``ccache`` on Linux and macOS (``apt-get install ccache``,
   ``brew install ccache``) and set up ``sccache`` on Windows, where MSVC
@@ -342,7 +344,9 @@ Caches and limits:
 
 Tooling
 ~~~~~~~
-What the command looks for and offers to install:
+What the command looks for and offers to install. The ``tools`` extra
+(``pip install pyvista-build[tools]``) installs every PyPI one up front,
+here or in CI:
 
 - `git <https://git-scm.com/>`_ clones the source and checks out the
   requested tag, branch, or commit. Never installed by the command.
