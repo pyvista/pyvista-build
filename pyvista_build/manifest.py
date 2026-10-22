@@ -30,7 +30,9 @@ TOP_LEVEL_KEYS = (
     'options',
     'hooks',
     'manylinux',
+    'repair',
 )
+REPAIR_KEYS = ('strip', *OS_NAMES)
 _CMAKE_ENTRY = re.compile(r'[A-Za-z_][A-Za-z0-9_.+-]*(:[A-Za-z]+)?=')
 
 
@@ -152,6 +154,8 @@ class Manifest:
     options: dict[str, Option]
     hooks: dict[str, tuple[str, ...]]
     manylinux_packages: tuple[str, ...] = ()
+    repair_strip: bool = False
+    repair_args: dict[str, tuple[str, ...]] = field(default_factory=dict)
     path: Path | None = field(default=None, compare=False)
 
     def groups_for(self, os_name: str) -> list[Group]:
@@ -410,6 +414,8 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
     }
     manylinux = _table(data, 'manylinux', where='manifest')
     _check_keys(manylinux, ('packages',), where='[manylinux]')
+    repair = _table(data, 'repair', where='manifest')
+    _check_keys(repair, REPAIR_KEYS, where='[repair]')
     hooks_table = _table(data, 'hooks', where='manifest')
     unknown_hooks = set(hooks_table) - set(HOOK_NAMES)
     if unknown_hooks:
@@ -433,6 +439,8 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
         options=options,
         hooks=hooks,
         manylinux_packages=_str_list(manylinux, 'packages', where='[manylinux]'),
+        repair_strip=_optional(repair, 'strip', bool, where='[repair]', default=False),
+        repair_args={name: _str_list(repair, name, where='[repair]') for name in OS_NAMES},
         path=path,
     )
 
