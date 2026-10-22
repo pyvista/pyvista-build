@@ -162,6 +162,7 @@ def container_script(
         'if ! test -x "$PY"; then echo "$PY is not in this image" >&2; exit 1; fi',
         "git config --global --add safe.directory '*'",
         f'export PIP_CACHE_DIR={PIP_CACHE}',
+        'mkdir -p "$PIP_CACHE_DIR" && chown "$(id -u):$(id -g)" "$PIP_CACHE_DIR"',
     ]
     if packages:
         pkgs = ' '.join(shlex.quote(p) for p in packages)

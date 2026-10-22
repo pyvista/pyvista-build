@@ -218,6 +218,27 @@ def test_pip_tools_offered(tmp_path: Path, mocker: MockerFixture):
     assert f'$ {phases._join(["pip", "install", "cmake>=3.22", "auditwheel", "wheel"])}' in out
 
 
+def test_container_pip_installs_as_root(tmp_path: Path, mocker: MockerFixture):
+    """Inside the container pip is told it runs as root, and the manifest line is the host's."""
+    mocker.patch.object(
+        tools.shutil, 'which', side_effect=lambda name, **_: None if name == 'cmake' else '/u/x'
+    )
+    mocker.patch.object(tools, 'executable_version', return_value='99.0')
+    mocker.patch.object(tools, 'python_build_packages', return_value=[])
+    mocker.patch.object(
+        tools,
+        'pip_install_command',
+        side_effect=lambda *s, args=(), **_: ['pip', 'install', *args, *s],
+    )
+    console = Console(record=True, width=4000, force_terminal=False)
+    Builder(_config(tmp_path, in_container=True), console).build()
+    out = console.export_text()
+    assert (
+        f'$ {phases._join(["pip", "install", "--root-user-action=ignore", "cmake>=3.22"])}' in out
+    )
+    assert 'Manifest:' not in out
+
+
 def test_too_old_tool(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
     mocker.patch.object(tools, 'executable_version', return_value='3.10')
@@ -1333,6 +1354,7 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     assert 'dnf install -y --setopt=install_weak_deps=False a-devel b' in script
     assert "git config --global --add safe.directory '*'" in script
     assert 'export PIP_CACHE_DIR=/work/pip-cache' in lines
+    assert 'mkdir -p "$PIP_CACHE_DIR" && chown "$(id -u):$(id -g)" "$PIP_CACHE_DIR"' in lines
     assert 'yum install -y a-devel b' in script
     assert 'ccache-4.14-linux-$ARCH-musl-static' in script
     for arch, sha in manylinux.CCACHE_SHA256.items():
@@ -1353,7 +1375,7 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     )
     assert 'dnf' not in script
     assert 'ccache' not in script
-    assert 'chown' not in script
+    assert "trap 'chown" not in script
     cmd = manylinux.docker_command(
         'img',
         mounts={
@@ -1465,7 +1487,8 @@ def test_build_in_manylinux(tmp_path: Path, mocker: MockerFixture):
     out = console.export_text()
     assert f'  • the vtk wheel into {phases.short_path(sys.prefix)}, once it is built' in out
     plan = out.index('The build runs these eight steps:')
-    assert plan < out.index('Build tree and wheel go in') < out.index('2/8 Source')
+    assert plan < out.index('Build tree and wheel go in') < out.index('Source (on this machine)')
+    assert '2/8 Source' not in out
     assert f'6. Wheel: package the wheel with setup.py bdist_wheel into {cfg.dist_dir}' in out
     assert out.count('The build runs these eight steps:') == 1
     assert 'Done' in out

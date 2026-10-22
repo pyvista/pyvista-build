@@ -900,6 +900,11 @@ class Builder:
         return self.interpreter.executable
 
     @property
+    def _pip_args(self) -> tuple[str, ...]:  # numpydoc ignore=RT01
+        """Installer arguments: the container runs pip as root, which pip warns about."""
+        return ('--root-user-action=ignore',) if self.config.in_container else ()
+
+    @property
     def prefix(self) -> str:  # numpydoc ignore=RT01
         """Environment the wheel and the build packages are installed into."""
         return self.interpreter.prefix
@@ -982,7 +987,8 @@ class Builder:
     def phase_source(self) -> None:
         """Clone or reuse the checkout, then load its manifest."""
         cfg = self.config
-        self.step('2/8 Source')
+        on_host = cfg.manylinux and not cfg.in_container
+        self.step('Source (on this machine)' if on_host else '2/8 Source')
         git = _tools.git_tool()
         if not _tools.detect(git, self.env):
             msg = f'git was not found on PATH. {git.instructions}'
@@ -1060,6 +1066,8 @@ class Builder:
         cfg = self.config
         source = cfg.src_dir if cfg.src_dir.exists() else None
         self._manifest = find_manifest(cfg.backend, source)
+        if cfg.in_container:
+            return
         manifest = self.manifest.path
         shown = short_path(manifest) if manifest is not None else str(manifest)
         self.say(f'Manifest: [bold]{escape(shown)}[/bold]')
@@ -1284,7 +1292,11 @@ class Builder:
             raise BuildError(msg)
 
         specs = [f'{t.pip}{t.spec}' for t in missing_pip] + missing_packages
-        cmd = _tools.pip_install_command(*specs, python=self.interpreter) if specs else None
+        cmd = (
+            _tools.pip_install_command(*specs, args=self._pip_args, python=self.interpreter)
+            if specs
+            else None
+        )
         if specs and cmd is None:
             msg = (
                 f'Install {", ".join(specs)} into {short_path(self.prefix)} and run again '
@@ -1417,7 +1429,7 @@ class Builder:
         if not missing:
             return
         wanted = [f'{t.pip}{t.spec}' for t in missing]
-        cmd = _tools.pip_install_command(*wanted, python=self.interpreter)
+        cmd = _tools.pip_install_command(*wanted, args=self._pip_args, python=self.interpreter)
         if cmd is None:
             msg = (
                 f'Install {", ".join(wanted)} into {short_path(self.prefix)} and run again '
