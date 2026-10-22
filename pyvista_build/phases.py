@@ -2134,12 +2134,10 @@ class Builder:
         """
         cfg = self.config
         out = str(cfg.wheelhouse)
-        extra = list(self.manifest.repair_args.get(cfg.os_name, ()))
+        extra = self.manifest.repair_args[cfg.os_name]
         if cfg.os_name == 'linux':
             strip = ['--strip'] if self.manifest.repair_strip else []
-            plat = (
-                ['--plat', f'manylinux_2_28_{_manylinux.host_arch()}'] if cfg.in_container else []
-            )
+            plat = ['--plat', _manylinux.container_plat()] if cfg.in_container else []
             return ['auditwheel', 'repair', *strip, *plat, *extra, str(wheel), '-w', out], {}
         if cfg.os_name == 'windows':
             bin_dir = str(cfg.cmake_dir / 'bin')
@@ -2182,10 +2180,11 @@ class Builder:
             )
         wheel = self.wheel or cfg.dist_dir / f'{cfg.backend}-*.whl'
         cmd, env = self.repair_command(wheel)
+        strip = self.manifest.repair_strip and cfg.os_name == 'macos'
         stamp = cfg.wheelhouse / _REPAIR_STAMP
         fingerprint = None
         if self.wheel is not None and not cfg.dry_run:
-            fingerprint = _wheel_fingerprint(self.wheel, cmd)
+            fingerprint = _wheel_fingerprint(self.wheel, [*cmd, *(['strip'] if strip else [])])
             repaired = _stamped_wheel(stamp, fingerprint)
             if repaired is not None:
                 self.say(
@@ -2198,7 +2197,6 @@ class Builder:
             self.say('Skipped.')
             return
         self.run(cmd, env=env)
-        strip = self.manifest.repair_strip and cfg.os_name == 'macos'
         if cfg.dry_run:
             if strip:
                 self.say(

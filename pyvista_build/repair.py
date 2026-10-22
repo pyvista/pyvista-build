@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 from pathlib import Path
 import shutil
@@ -67,7 +68,7 @@ def strip_wheel(wheel: Path) -> list[str]:
             subprocess.run(['codesign', '--force', '--sign', '-', str(member)], check=True)
             stripped.append(info.filename)
         _rewrite_record(tree, infos)
-        rewritten = wheel.with_name(wheel.name + '.strip')
+        rewritten = tree / wheel.name
         with zipfile.ZipFile(rewritten, 'w', zipfile.ZIP_DEFLATED) as out:
             for info in infos:
                 entry = zipfile.ZipInfo(info.filename, info.date_time)
@@ -85,13 +86,13 @@ def _rewrite_record(tree: Path, infos: list[zipfile.ZipInfo]) -> None:
     )
     if record is None:
         return
-    lines = []
-    for info in infos:
-        member = tree / info.filename
-        if member == record:
-            lines.append(f'{info.filename},,')
-            continue
-        data = member.read_bytes()
-        digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
-        lines.append(f'{info.filename},sha256={digest},{len(data)}')
-    record.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    with record.open('w', encoding='utf-8', newline='') as handle:
+        writer = csv.writer(handle, lineterminator='\n')
+        for info in infos:
+            member = tree / info.filename
+            if member == record:
+                writer.writerow([info.filename, '', ''])
+                continue
+            data = member.read_bytes()
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b'=').decode()
+            writer.writerow([info.filename, f'sha256={digest}', len(data)])

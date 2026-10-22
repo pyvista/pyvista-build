@@ -980,6 +980,27 @@ def test_repair_skips_a_wheel_it_already_repaired(tmp_path: Path, mocker: Mocker
     assert run.call_count == 4
 
 
+def test_repair_runs_again_when_the_strip_flag_changes(tmp_path: Path, mocker: MockerFixture):
+    """Toggling [repair] strip on macOS is a different repair of the same wheel."""
+    builder = _builder(tmp_path, mocker, os_name='macos', repair=True)
+    cfg = builder.config
+    cfg.dist_dir.mkdir(parents=True)
+    cfg.wheelhouse.mkdir(parents=True)
+    built = cfg.dist_dir / 'vtk-9.7.0-cp314-cp314-macosx_11_0_arm64.whl'
+    repaired = cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-macosx_11_0_arm64.whl'
+    run = mocker.patch.object(
+        builder, 'run', side_effect=lambda *_, **__: _write_wheel(repaired, b'x')
+    )
+    strip = mocker.patch.object(repair, 'strip_wheel', return_value=[])
+    _write_wheel(built, b'one')
+    for flag, runs in ((False, 1), (True, 2), (True, 2), (False, 3)):
+        builder._manifest = replace(builder.manifest, repair_strip=flag)
+        builder.wheel = built
+        builder.phase_repair()
+        assert run.call_count == runs
+    assert strip.call_count == 1
+
+
 def test_wheel_hides_only_the_known_setuptools_warnings(tmp_path: Path, mocker: MockerFixture):
     """The filters drop two exact warnings, keep any other, and step aside for --verbose."""
     builder = _builder(tmp_path, mocker)
@@ -1270,7 +1291,9 @@ def test_wheel_env_and_repair_command(tmp_path: Path, mocker: MockerFixture, os_
 
 
 @pytest.mark.parametrize('os_name', OS_NAMES)
-def test_repair_command_reads_the_repair_table(tmp_path: Path, mocker: MockerFixture, os_name):
+def test_repair_command_reads_the_repair_table(
+    tmp_path: Path, mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch, os_name
+):
     """The table's strip flag and extra arguments land before the wheel path."""
     mocker.patch.object(phases.platform, 'machine', return_value='x86_64')
     mocker.patch.object(manylinux, 'host_arch', return_value='aarch64')
@@ -1307,9 +1330,23 @@ def test_repair_command_reads_the_repair_table(tmp_path: Path, mocker: MockerFix
     }
     assert builder.repair_command(wheel)[0] == expected[os_name]
     cfg.in_container = True
+    monkeypatch.delenv(manylinux.PLAT_VAR, raising=False)
     cmd = builder.repair_command(wheel)[0]
     if os_name == 'linux':
-        assert cmd[2:5] == ['--strip', '--plat', 'manylinux_2_28_aarch64']
+        assert cmd == [
+            'auditwheel',
+            'repair',
+            '--strip',
+            '--plat',
+            'manylinux_2_28_aarch64',
+            '--extra',
+            'one',
+            str(wheel),
+            '-w',
+            out,
+        ]
+        monkeypatch.setenv(manylinux.PLAT_VAR, 'manylinux_2_34_aarch64')
+        assert builder.repair_command(wheel)[0][4] == 'manylinux_2_34_aarch64'
     else:
         assert cmd == expected[os_name]
 
@@ -1351,6 +1388,7 @@ def test_strip_wheel(tmp_path: Path, mocker: MockerFixture):
         'demo/fast.so': macho,
         'demo/libdemo.dylib': macho,
         'demo/text.so': b'not a library',
+        'demo/odd,name.txt': b'x',
         'demo-1.0.dist-info/RECORD': b'stale\n',
     }
     with zipfile.ZipFile(wheel, 'w') as archive:
@@ -1366,12 +1404,17 @@ def test_strip_wheel(tmp_path: Path, mocker: MockerFixture):
 
     run = mocker.patch.object(repair.subprocess, 'run', side_effect=fake_strip)
     assert repair.strip_wheel(wheel) == ['demo/fast.so', 'demo/libdemo.dylib']
-    assert [c.args[0][:2] for c in run.call_args_list] == [
+    calls = [c.args[0] for c in run.call_args_list]
+    assert [c[:-1] for c in calls] == [
         ['strip', '-x'],
-        ['codesign', '--force'],
+        ['codesign', '--force', '--sign', '-'],
         ['strip', '-x'],
-        ['codesign', '--force'],
+        ['codesign', '--force', '--sign', '-'],
     ]
+    assert [c[-1].rsplit('/', 2)[-2:] for c in calls] == [['demo', 'fast.so']] * 2 + [
+        ['demo', 'libdemo.dylib']
+    ] * 2
+    assert not list(tmp_path.glob('*.strip'))
     with zipfile.ZipFile(wheel) as archive:
         names = archive.namelist()
         assert archive.read('demo/fast.so') == macho[:8]
@@ -1379,12 +1422,13 @@ def test_strip_wheel(tmp_path: Path, mocker: MockerFixture):
         assert archive.getinfo('demo/fast.so').external_attr == 0o755 << 16
         record = archive.read('demo-1.0.dist-info/RECORD').decode().splitlines()
     assert names == list(members)
-    digest = base64.urlsafe_b64encode(hashlib.sha256(macho[:8]).digest()).rstrip(b'=').decode()
+    digest = _sha256(macho[:8])
     assert record == [
         'demo/__init__.py,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0',
         f'demo/fast.so,sha256={digest},8',
         f'demo/libdemo.dylib,sha256={digest},8',
         'demo/text.so,sha256=' + _sha256(b'not a library') + ',13',
+        '"demo/odd,name.txt",sha256=' + _sha256(b'x') + ',1',
         'demo-1.0.dist-info/RECORD,,',
     ]
 

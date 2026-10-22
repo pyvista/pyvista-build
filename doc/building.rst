@@ -345,8 +345,8 @@ What happens:
   requirements, mounts the ``pyvista-build`` you are running read-only, and
   runs the remaining steps with the source and ``./vtk-build`` mounted.
 - The repair step runs ``auditwheel`` there with ``--plat`` set to the
-  image's policy, which gives the wheel its ``manylinux_2_28`` tag and puts
-  it in ``vtk-build/wheelhouse``.
+  image's policy (its ``AUDITWHEEL_PLAT``), which gives the wheel the image's
+  tag and puts it in ``vtk-build/wheelhouse``.
 - Files written by the container are handed back to your user, even when
   the build fails.
 - On a Linux host the install step runs afterwards. On macOS and Windows the
