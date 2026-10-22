@@ -296,7 +296,8 @@ def build(
     for path, values in _defaults:
         settings = ', '.join(f'{k}={v}' for k, v in values.items())
         APP.console.print(
-            f'[dim]Defaults from {escape(short_path(path))}: {escape(settings)}[/dim]'
+            f'[dim]Defaults from {escape(short_path(path))}: {escape(settings)}[/dim]',
+            highlight=False,
         )
     try:
         Builder(config, console=APP.console).build()
