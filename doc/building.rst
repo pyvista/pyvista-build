@@ -269,6 +269,9 @@ build, so give a fork its own ``--build-dir``:
     pyvista-build cvista
     pyvista-build vtk --url https://github.com/me/vtk.git --ref my-branch --build-dir vtk-fork-build
 
+:doc:`manifest` lists every key a manifest can set, for a fork that
+wants its own groups, options or hooks.
+
 A backend built this way is selected like any other installed one:
 automatically for ``cvista``, or explicitly through
 ``PYVISTA_VTK_BACKEND``.

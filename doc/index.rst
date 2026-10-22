@@ -24,3 +24,4 @@ environment that has no VTK yet.
 
    building
    cli
+   manifest
