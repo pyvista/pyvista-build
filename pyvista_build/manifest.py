@@ -438,12 +438,12 @@ def parse_manifest(data: dict[str, Any], path: Path | None = None) -> Manifest:
     )
 
 
-def _read_toml(path: Path) -> dict[str, Any]:
-    """Decode a TOML file, reporting a syntax error as a :class:`ManifestError`."""
+def _read_toml(path: Path, *, label: str | None = None) -> dict[str, Any]:
+    """Decode a TOML file, reporting a syntax error as a :class:`ManifestError` under ``label``."""
     try:
         return tomllib.loads(path.read_text(encoding='utf-8'))
     except tomllib.TOMLDecodeError as err:
-        msg = f'{path}: {err}'
+        msg = f'{label or path}: {err}'
         raise ManifestError(msg) from None
 
 
@@ -466,12 +466,12 @@ def read_defaults(directory: Path) -> list[tuple[Path, dict[str, Any]]]:
     found: list[tuple[Path, dict[str, Any]]] = []
     manifest = directory / MANIFEST_FILENAME
     if manifest.is_file():
-        table = _read_toml(manifest).get('defaults')
+        table = _read_toml(manifest, label=manifest.name).get('defaults')
         if isinstance(table, dict):
             found.append((manifest, table))
     pyproject = directory / PYPROJECT_FILENAME
     if pyproject.is_file():
-        table = _read_toml(pyproject).get('tool', {}).get('pyvista-build')
+        table = _read_toml(pyproject, label=pyproject.name).get('tool', {}).get('pyvista-build')
         if isinstance(table, dict):
             found.append((pyproject, table))
     return found
