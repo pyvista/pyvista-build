@@ -38,6 +38,13 @@ installed is still printed:
 
     pyvista-build vtk --yes
 
+Apply a named set of options from the backend's manifest, here cvista's
+``ci`` set, keeping any further flags on top (see :doc:`manifest`):
+
+.. code-block:: bash
+
+    pyvista-build cvista --defaults ci
+
 Build VTK's ``master`` branch, or any tag, branch, or commit:
 
 .. code-block:: bash

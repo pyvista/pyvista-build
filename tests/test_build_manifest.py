@@ -253,6 +253,16 @@ def test_parse_manifest_errors(patch, match):
         parse_manifest(data)
 
 
+def test_parse_manifest_defaults():
+    data = dict(MINIMAL_MANIFEST, defaults={'ci': {'yes': True, 'opt': ['lto=0']}, 'fast': {}})
+    assert parse_manifest(data).defaults == {'ci': {'yes': True, 'opt': ['lto=0']}, 'fast': {}}
+    assert parse_manifest(MINIMAL_MANIFEST).defaults == {}
+    with pytest.raises(ManifestError, match="'defaults' must be a table"):
+        parse_manifest(dict(MINIMAL_MANIFEST, defaults=['ci']))
+    with pytest.raises(ManifestError, match=r"'ci' must be a table, written as \[defaults.ci\]"):
+        parse_manifest(dict(MINIMAL_MANIFEST, defaults={'ci': True}))
+
+
 def test_manifest_version_is_required():
     data = {k: v for k, v in MINIMAL_MANIFEST.items() if k != 'manifest_version'}
     with pytest.raises(ManifestError, match="missing required key 'manifest_version'"):

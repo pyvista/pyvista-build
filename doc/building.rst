@@ -185,6 +185,18 @@ wheel at the end.
     pyvista-build vtk --ref master --build-type RelWithDebInfo --jobs 8 --yes
     pyvista-build vtk --dry-run
 
+A backend that always builds the same way in CI keeps those flags in a
+``[defaults.<name>]`` table of its manifest, and the command line names
+the set. ``cvista`` keeps a ``ci`` set with ``--yes``, ``--source .`` and
+its build options, so its job runs:
+
+.. code-block:: bash
+
+    pyvista-build cvista --defaults ci
+
+Flags given after the name still win, so ``--defaults ci --jobs 4`` builds
+the set with four jobs. :doc:`manifest` describes the table.
+
 Developer Loop
 ~~~~~~~~~~~~~~
 The build tree is kept between runs. Edit files under ``vtk-build/src``
