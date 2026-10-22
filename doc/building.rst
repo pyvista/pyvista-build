@@ -258,9 +258,10 @@ it short: a warm cache turns a build of hours into minutes.
 - On Linux add ``--manylinux`` for a wheel that installs on other
   machines; the container installs ``ccache`` itself and uses the same
   directory.
-- The cache statistics are printed after the build and, on GitHub Actions,
-  written to the job summary (``GITHUB_STEP_SUMMARY``), from inside the
-  container as well.
+- After the build, one line says how many of this run's compilations hit
+  and missed the cache, and the cumulative statistics are printed and, on
+  GitHub Actions, written to the job summary (``GITHUB_STEP_SUMMARY``), from
+  inside the container as well.
 
 .. code-block:: bash
 

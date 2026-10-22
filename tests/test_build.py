@@ -2498,6 +2498,77 @@ def test_item_hanging_indent(tmp_path: Path):
     assert out.getvalue() == ('  1. Tools: check git, cmake,\n     ninja and a compiler\n')
 
 
+CCACHE_STATS = 'direct_cache_hit\t{d}\npreprocessed_cache_hit\t{p}\ncache_miss\t{m}\nother\t1\n'
+SCCACHE_STATS = (
+    'Compile requests   {r}\nCache hits         {h}\nCache misses       {m}\n'
+    'Cache hits (C/C++) {h}\n'
+)
+
+
+@pytest.mark.parametrize(
+    ('name', 'text', 'expected'),
+    [
+        ('ccache', CCACHE_STATS.format(d=3, p=2, m=4), (5, 4)),
+        ('sccache', SCCACHE_STATS.format(r=9, h=7, m=2), (7, 2)),
+        ('ccache', 'cache_miss\t4\n', None),
+        ('sccache', 'Cache hits         7\n', None),
+        ('ccache', 'garbage', None),
+    ],
+)
+def test_parse_cache_counts(name, text, expected):
+    """Hits and misses are read from each tool's format, and missing keys give None."""
+    assert phases.parse_cache_counts(name, text) == expected
+
+
+@pytest.mark.parametrize(
+    ('before', 'after', 'said'),
+    [
+        ((5, 4), (5, 4), 'nothing was compiled this run'),
+        ((5, 4), (105, 4), 'Compiler cache this run: 100 hits, 0 misses (100% hit rate)'),
+        ((0, 0), (30, 10), 'Compiler cache this run: 30 hits, 10 misses (75% hit rate)'),
+        (None, (30, 10), None),
+    ],
+)
+def test_build_says_cache_delta(tmp_path: Path, mocker: MockerFixture, before, after, said):
+    """The build reports this run's hits and misses from the counters before and after it."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    mocker.patch.object(builder, 'run')
+    mocker.patch.object(builder, 'hooks')
+    counts = mocker.patch.object(builder, '_cache_counts', side_effect=[before, after])
+    builder.phase_build()
+    assert counts.call_count == 2
+    out = builder.console.export_text()
+    if said is None:
+        assert 'this run' not in out
+    else:
+        assert said in out
+
+
+def test_cache_counts(tmp_path: Path, mocker: MockerFixture):
+    """The counters come from --print-stats, and a failing or missing tool gives None."""
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    builder = _builder(tmp_path, mocker, compiler_cache='ccache', cache_dir=tmp_path / 'cc')
+    builder._activate_compiler_cache()
+    run = mocker.patch.object(
+        phases.subprocess,
+        'run',
+        return_value=subprocess.CompletedProcess([], 0, CCACHE_STATS.format(d=1, p=1, m=2), ''),
+    )
+    assert builder._cache_counts() == (2, 2)
+    assert run.call_args.args[0] == ['ccache', '--print-stats']
+    run.return_value = subprocess.CompletedProcess([], 1, '', 'error')
+    assert builder._cache_counts() is None
+    run.side_effect = OSError('gone')
+    assert builder._cache_counts() is None
+    builder.config.dry_run = True
+    assert builder._cache_counts() is None
+    builder.config.dry_run = False
+    builder.launcher = None
+    assert builder._cache_counts() is None
+
+
 def test_cache_stats_in_job_summary(tmp_path: Path, mocker: MockerFixture, monkeypatch):
     """The statistics are printed and appended to GITHUB_STEP_SUMMARY when it is set."""
     mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
