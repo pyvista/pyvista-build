@@ -648,7 +648,7 @@ def test_expand_defaults(tmp_path: Path):
         'verbose': False,
         'repair': False,
         'source': '.',
-        'build_dir': '/abs',
+        'build_dir': str(Path('/abs').resolve()),
         'opt': ['lto=0', 'gate_o2=1'],
         'with': ['io'],
         'jobs': 4,
@@ -662,7 +662,7 @@ def test_expand_defaults(tmp_path: Path):
         '--source',
         str(tmp_path),
         '--build-dir',
-        '/abs',
+        str(Path('/abs').resolve()),
         '--opt',
         'lto=0',
         '--opt',
@@ -800,7 +800,7 @@ def test_cli_defaults_shipped_manifest(
         ),
         (DEFAULTS_MANIFEST + '[defaults.x]\njobs = "4"\n', 'vtk --defaults x', 'jobs must be an'),
         ('[defaults\n', 'vtk --defaults ci', 'pyvista-build.toml: Expected'),
-        (DEFAULTS_MANIFEST, 'vtk --defaults ""', '--defaults names no set.'),
+        (DEFAULTS_MANIFEST, ['vtk', '--defaults', ''], '--defaults names no set.'),
         (
             DEFAULTS_MANIFEST,
             'demo --defaults ci',
@@ -809,9 +809,9 @@ def test_cli_defaults_shipped_manifest(
     ],
 )
 def test_cli_defaults_errors(
-    tmp_path: Path, capsys: pytest.CaptureFixture, text: str, args: str, match: str
+    tmp_path: Path, capsys: pytest.CaptureFixture, text: str, args: str | list[str], match: str
 ):
-    if 'demo' not in args:
+    if 'demo' not in (args if isinstance(args, str) else ' '.join(args)):
         (tmp_path / 'pyvista-build.toml').write_text(text)
     with pytest.raises(SystemExit):
         main(args)
