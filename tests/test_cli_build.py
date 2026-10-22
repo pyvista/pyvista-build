@@ -623,6 +623,8 @@ def test_cli_defaults_from_source_dir(captured: list[BuildConfig], tmp_path: Pat
     [
         ('[tool.pyvista-build]\nbogus = 1\n', 'bogus'),
         ('[tool.pyvista-build\n', 'pyproject.toml'),
+        ('[tool.pyvista-build]\nyes = true\ndry_run = true\n', 'pass --dry-run, --yes'),
+        ('[tool.pyvista-build]\nbackend = "vtk"\n', 'backend cannot be a default'),
     ],
 )
 def test_cli_defaults_errors(tmp_path: Path, capsys: pytest.CaptureFixture, text: str, match: str):

@@ -310,6 +310,22 @@ def build(
 
 #: Files the current run read its option defaults from, with the values each set.
 _defaults: list[tuple[Path, dict[str, Any]]] = []
+#: Options that decide how one run behaves rather than what a project builds.
+PER_RUN_OPTIONS = frozenset(
+    {'backend', 'yes', 'interactive', 'dry-run', 'verbose', 'clean', 'reconfigure', 'update'}
+)
+
+
+def _check_defaults(path: Path, values: dict[str, Any]) -> None:
+    """Stop when a defaults table sets an option that only belongs on the command line."""
+    per_run = sorted(k for k in values if k.replace('_', '-') in PER_RUN_OPTIONS)
+    if per_run:
+        flags = ', '.join(f'--{k.replace("_", "-")}' for k in per_run)
+        msg = (
+            f'{short_path(path)}: {", ".join(per_run)} cannot be a default; '
+            f'pass {flags} on the command line.'
+        )
+        print_error_and_exit(escape(msg))
 
 
 def _source_dir(tokens: list[str]) -> Path:
@@ -341,6 +357,8 @@ def main(argv: list[str] | str | None = None) -> None:
         _defaults[:] = read_defaults(_source_dir(tokens))
     except ManifestError as err:
         print_error_and_exit(escape(str(err)))
+    for path, values in _defaults:
+        _check_defaults(path, values)
     APP.config = tuple(
         Dict(values, source=short_path(path), use_commands_as_keys=False)
         for path, values in _defaults

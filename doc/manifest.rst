@@ -288,6 +288,10 @@ keys under ``[tool.pyvista-build]`` in its ``pyproject.toml``. When both
 files set a key, the manifest wins. The build prints the file each default
 came from, and an unknown key stops the command with the file's name.
 
+The backend name and the switches that shape one run rather than the
+project's build, ``yes``, ``interactive``, ``dry-run``, ``verbose``,
+``clean``, ``reconfigure`` and ``update``, are refused as defaults.
+
 Checking a Manifest
 -------------------
 A dry run loads the manifest and prints every command the build would run,
