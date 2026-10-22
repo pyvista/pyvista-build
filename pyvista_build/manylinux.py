@@ -23,6 +23,7 @@ WORK = '/work'
 SOURCE = '/src'
 CACHE = '/cache'
 PACKAGE_ROOT = '/opt/pyvista-build-host'
+SUMMARY = '/github-step-summary.md'
 PIP_CACHE = f'{WORK}/pip-cache'
 CCACHE_VERSION = '4.14'
 CCACHE_SHA256 = {
@@ -161,6 +162,7 @@ def container_script(
         'if ! test -x "$PY"; then echo "$PY is not in this image" >&2; exit 1; fi',
         "git config --global --add safe.directory '*'",
         f'export PIP_CACHE_DIR={PIP_CACHE}',
+        'mkdir -p "$PIP_CACHE_DIR" && chown "$(id -u):$(id -g)" "$PIP_CACHE_DIR"',
     ]
     if packages:
         pkgs = ' '.join(shlex.quote(p) for p in packages)
@@ -231,6 +233,8 @@ def docker_command(
     for name in sorted(env):
         if name.startswith(('CCACHE_', 'SCCACHE_')) and name not in _HOST_PATH_VARS:
             cmd += ['--env', name]
+    if SUMMARY in mounts:
+        cmd += ['--env', f'GITHUB_STEP_SUMMARY={SUMMARY}']
     cmd += ['--workdir', WORK, image, 'bash', '-c', script]
     return cmd
 
