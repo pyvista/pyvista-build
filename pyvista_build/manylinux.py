@@ -33,7 +33,9 @@ CCACHE_SHA256 = {
     'aarch64': '40623f11012a97d60c7d90058d7e3c8c70a3802af53a34067b89e6345c89db69',
 }
 DOCKER_INSTRUCTIONS = 'Install Docker: https://docs.docker.com/get-docker/'
-_HOST_PATH_VARS = frozenset({'CCACHE_CONFIGPATH', 'CCACHE_DIR', 'CCACHE_LOGFILE', 'SCCACHE_DIR'})
+_HOST_PATH_VARS = frozenset(
+    {'CCACHE_BASEDIR', 'CCACHE_CONFIGPATH', 'CCACHE_DIR', 'CCACHE_LOGFILE', 'SCCACHE_DIR'}
+)
 #: Cache size the build inside the container sets when the host did not set ``CCACHE_MAXSIZE``.
 CCACHE_MAXSIZE = '30G'
 #: Container paths the build uses itself, so ``--mount`` cannot take them.
@@ -239,10 +241,16 @@ def parse_mount(spec: str) -> tuple[Path, str, bool]:
     body = spec[:-3] if read_only else spec
     host, sep, inside = body.rpartition(':')
     if not sep or not host or not inside.startswith('/'):
-        msg = f'--mount takes HOST:CONTAINER[:ro] with an absolute container path, not {spec!r}.'
+        msg = (
+            f'--mount takes HOST:CONTAINER[:ro], an absolute container path with ro the only '
+            f'mode, not {spec!r}.'
+        )
         raise ValueError(msg)
     inside = inside.rstrip('/') or '/'
-    if any(inside == p or inside.startswith(f'{p}/') for p in RESERVED_PATHS) or inside == '/':
+    if inside == '/' or any(
+        inside == p or inside.startswith(f'{p}/') or p.startswith(f'{inside}/')
+        for p in RESERVED_PATHS
+    ):
         msg = f'--mount cannot use {inside}: the build mounts {", ".join(RESERVED_PATHS)} itself.'
         raise ValueError(msg)
     return Path(host), inside, read_only

@@ -1624,7 +1624,7 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
         'img', mounts={}, script='true', interactive=False, env=env, passthrough=['CCACHE_*']
     )
     forwarded = [listed[i + 1] for i, part in enumerate(listed) if part == '--env']
-    assert forwarded == ['CCACHE_BASEDIR', 'CCACHE_MAXSIZE']
+    assert forwarded == ['CCACHE_MAXSIZE']
     listed = manylinux.docker_command(
         'img',
         mounts={'/data': tmp_path, '/ro': tmp_path},
@@ -1669,7 +1669,9 @@ def test_parse_mount(spec, expected):
         ('/h:/work', 'mounts /work'),
         ('/h:/src/sub', 'mounts /work'),
         ('/h:/opt/pyvista-build-host/x', 'mounts /work'),
+        ('/h:/opt', 'mounts /work'),
         ('/h:/', 'mounts /work'),
+        ('/h:/data:rw', 'ro the only mode'),
     ],
 )
 def test_parse_mount_rejects(spec, match):
@@ -1700,8 +1702,14 @@ def test_build_in_manylinux_env_and_mounts(tmp_path: Path, mocker: MockerFixture
     src = tmp_path / 'src'
     (src / '.git').mkdir(parents=True)
     cfg.source = src
+    real = phases.find_manifest
+    mocker.patch.object(
+        phases,
+        'find_manifest',
+        side_effect=lambda *a: replace(real(*a), manylinux_env=('DEMO_*',)),
+    )
     builder = Builder(cfg, Console(quiet=True))
-    builder.env.update({'MY_FLAG': '1', 'TAG': 'x', 'OTHER': '2'})
+    builder.env.update({'DEMO_PGO': 'gen', 'MY_FLAG': '1', 'TAG': 'x', 'OTHER': '2'})
     run = mocker.patch.object(builder, 'run')
     mocker.patch.object(builder, 'phase_install')
     cfg.dist_dir.mkdir(parents=True)
@@ -1711,7 +1719,7 @@ def test_build_in_manylinux_env_and_mounts(tmp_path: Path, mocker: MockerFixture
     builder.build()
     docker = run.call_args.args[0]
     forwarded = [docker[i + 1] for i, part in enumerate(docker) if part == '--env']
-    assert forwarded == ['MY_FLAG', 'TAG']
+    assert forwarded == ['DEMO_PGO', 'MY_FLAG', 'TAG']
     assert f'{data}:/data' in docker
     assert f'{tmp_path}:/ro:ro' in docker
     script = docker[-1]

@@ -242,9 +242,9 @@ it short: a warm cache turns a build of hours into minutes.
 - The cache tools read their own environment variables, and the command
   passes every ``CCACHE_*`` and ``SCCACHE_*`` setting through to the build
   and into the manylinux container except the host paths: ``CCACHE_DIR``
-  becomes the mounted cache and ``CCACHE_CONFIGPATH``, ``CCACHE_LOGFILE``
-  and ``SCCACHE_DIR`` stay on the host. A ``CCACHE_BASEDIR`` set on the host
-  goes in unchanged. ``FORCE_COLOR``, ``NO_COLOR``, ``TERM`` and ``COLUMNS``
+  becomes the mounted cache and ``CCACHE_BASEDIR``, ``CCACHE_CONFIGPATH``,
+  ``CCACHE_LOGFILE`` and ``SCCACHE_DIR`` stay on the host.
+  ``FORCE_COLOR``, ``NO_COLOR``, ``TERM`` and ``COLUMNS``
   go in as well, so the container's output is colored and wrapped like the
   host's, and so does every variable the manifest's ``[manylinux] env`` or
   ``--env`` names. Set ``FORCE_COLOR=1`` in a job to keep the colors in its
@@ -252,8 +252,7 @@ it short: a warm cache turns a build of hours into minutes.
   setting in a job: the defaults are 5 GB and 10 GB, a full VTK build fits in
   1 GB, and the cache is uploaded and downloaded on every run. A developer
   machine needs no cap. Inside the manylinux container ``CCACHE_MAXSIZE``
-  defaults to 30 GB instead, since that cache stays on the machine and an
-  LTO or aarch64 build fills more of it.
+  defaults to 30 GB.
 - The command already keys ``ccache`` entries on the compiler's version
   string rather than its binary's timestamp (``CCACHE_COMPILERCHECK``) and
   on paths relative to the build (``CCACHE_BASEDIR``), and leaves the
@@ -365,8 +364,10 @@ What happens:
   manifest's ``[manylinux] env`` names. ``--mount HOST:CONTAINER`` mounts
   another host directory at an absolute container path, ``:ro`` at the end
   makes it read-only, and both flags repeat. The build's own paths
-  (``/work``, ``/src``, ``/cache``) are not available to ``--mount``, and
-  the extra directories are neither created nor handed back to your user.
+  (``/work``, ``/src``, ``/cache``, the summary file and
+  ``/opt/pyvista-build-host``), their parents and their children are not
+  available to ``--mount``, and the extra directories are neither created
+  nor handed back to your user.
 - The source is cloned or updated on your machine first.
 - The container installs VTK's build dependencies and this package's
   requirements, mounts the ``pyvista-build`` you are running read-only, and
@@ -385,8 +386,7 @@ Caches and limits:
   ``vtk-build/compiler-cache``, or in ``--cache-dir`` or ``$CCACHE_DIR`` when
   set. ``--compiler-cache none`` skips it. ``sccache`` is not available there.
 - The cache inside the container holds 30 GB (``CCACHE_MAXSIZE``) unless the
-  host sets ``CCACHE_MAXSIZE`` itself. A host ``CCACHE_BASEDIR`` is passed in
-  unchanged.
+  host sets ``CCACHE_MAXSIZE`` itself.
 - ``pip`` keeps its cache in ``vtk-build/pip-cache``.
 - A build tree configured inside the container cannot be continued outside
   it.
