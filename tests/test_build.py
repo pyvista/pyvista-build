@@ -1717,7 +1717,8 @@ def test_build_in_manylinux_env_and_mounts(tmp_path: Path, mocker: MockerFixture
     script = docker[-1]
     assert '/data' not in script.split('EXIT')[0]
     assert f'chown -R 7:7 {manylinux.WORK} {manylinux.SOURCE} ' in script
-    cfg.mounts = ['/nope/missing:/data']
+    missing = tmp_path / 'nope'
+    cfg.mounts = [f'{missing}:/data']
     with pytest.raises(BuildError, match='is not a directory'):
         builder.build()
     cfg.mounts = [f'{data}:/data', f'{data}:/data']
@@ -1726,12 +1727,12 @@ def test_build_in_manylinux_env_and_mounts(tmp_path: Path, mocker: MockerFixture
     cfg.mounts = ['bad']
     with pytest.raises(BuildError, match='absolute container path'):
         builder.build()
-    cfg.mounts = ['/nope/missing:/data']
+    cfg.mounts = [f'{missing}:/data']
     cfg.dry_run = True
     builder = Builder(cfg, Console(quiet=True))
     run = mocker.patch.object(builder, 'run')
     builder.build()
-    assert '/nope/missing:/data' in run.call_args.args[0]
+    assert f'{missing}:/data' in run.call_args.args[0]
 
 
 def test_container_ccache_maxsize_default(tmp_path: Path, mocker: MockerFixture):
