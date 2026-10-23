@@ -386,6 +386,8 @@ class BuildConfig:
     dry_run: bool = False
     verbose: bool = False
     manylinux: str | None = None
+    env: list[str] = field(default_factory=list)
+    mounts: list[str] = field(default_factory=list)
     in_container: bool = False
     python: str | None = None
     os_name: str = field(default_factory=_tools.host_os)
@@ -1458,6 +1460,8 @@ class Builder:
             self.env[var] = str(cache_dir)
         if self.launcher.name == 'ccache':
             self.env.setdefault('CCACHE_SLOPPINESS', 'time_macros,locale,pch_defines')
+            if cfg.in_container:
+                self.env.setdefault('CCACHE_MAXSIZE', _manylinux.CCACHE_MAXSIZE)
             if cfg.os_name != 'windows':
                 self.env.setdefault('CCACHE_COMPILERCHECK', '%compiler% --version')
             try:
@@ -2288,7 +2292,10 @@ class Builder:
         repaired = cast('Path', self._newest_wheel(cfg.wheelhouse))
         self.wheel = repaired
         if strip:
-            stripped = _repair.strip_wheel(repaired)
+            try:
+                stripped = _repair.strip_wheel(repaired)
+            except _repair.RepairError as err:
+                raise BuildError(str(err)) from None
             self.say(
                 f'Stripped and re-signed {len(stripped)} libraries in '
                 f'[bold]{escape(short_path(repaired))}[/bold].'
@@ -2390,6 +2397,22 @@ class Builder:
         if cfg.compiler_cache != 'none':
             cache_dir = self.compiler_cache_dir('CCACHE_DIR')
             mounts[_manylinux.CACHE] = cache_dir or cfg.build_dir / 'compiler-cache'
+        handed_back = list(mounts)
+        read_only: list[str] = []
+        for spec in cfg.mounts:
+            try:
+                host, inside, ro = _manylinux.parse_mount(spec)
+            except ValueError as err:
+                raise BuildError(str(err)) from None
+            if inside in mounts:
+                msg = f'--mount {spec}: {inside} is mounted twice.'
+                raise BuildError(msg)
+            if not host.is_dir() and not cfg.dry_run:
+                msg = f'--mount {spec}: {host} is not a directory.'
+                raise BuildError(msg)
+            mounts[inside] = host.resolve()
+            if ro:
+                read_only.append(inside)
         package_mount = f'{_manylinux.PACKAGE_ROOT}/pyvista_build'
         script = _manylinux.container_script(
             python=_manylinux.container_python(
@@ -2400,7 +2423,7 @@ class Builder:
             config=json.dumps(self.container_config()),
             ccache=cfg.compiler_cache != 'none',
             owner=_manylinux.file_owner(),
-            paths=list(mounts),
+            paths=handed_back,
             quiet=not cfg.verbose,
         )
         mounts[package_mount] = _manylinux.package_dir()
@@ -2410,15 +2433,16 @@ class Builder:
             script=script,
             interactive=cfg.prompting,
             env=self.env,
-            passthrough=self.manifest.manylinux_env,
+            passthrough=(*self.manifest.manylinux_env, *cfg.env),
+            read_only=read_only,
         )
         if not self.confirm('Run the build in the container? (n stops)'):
             msg = 'Stopped before the container build.'
             raise BuildError(msg)
         if not cfg.dry_run:
-            for inside, folder in mounts.items():
-                if inside not in (package_mount, _manylinux.SUMMARY):
-                    folder.mkdir(parents=True, exist_ok=True)
+            for inside in handed_back:
+                if inside != _manylinux.SUMMARY:
+                    mounts[inside].mkdir(parents=True, exist_ok=True)
         started = time.time()
         self.run(cmd, passthrough=True)
         if not cfg.dry_run:

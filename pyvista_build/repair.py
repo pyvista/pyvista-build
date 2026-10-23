@@ -22,6 +22,10 @@ _MACHO_MAGICS = (
 _LIBRARY_SUFFIXES = ('.so', '.dylib')
 
 
+class RepairError(Exception):
+    """A wheel the post-repair work cannot handle."""
+
+
 def is_macho(path: Path) -> bool:
     """Return whether a file starts with a Mach-O or universal binary magic number.
 
@@ -52,6 +56,11 @@ def strip_wheel(wheel: Path) -> list[str]:
     -------
     list[str]
         Archive names of the libraries that were stripped.
+
+    Raises
+    ------
+    RepairError
+        When the wheel has no ``RECORD``.
 
     """
     with tempfile.TemporaryDirectory(prefix='pyvista-build-strip-') as tmp:
@@ -85,7 +94,8 @@ def _rewrite_record(tree: Path, infos: list[zipfile.ZipInfo]) -> None:
         (tree / i.filename for i in infos if i.filename.endswith('.dist-info/RECORD')), None
     )
     if record is None:
-        return
+        msg = 'The repaired wheel has no RECORD, so it cannot be stripped and rewritten.'
+        raise RepairError(msg)
     with record.open('w', encoding='utf-8', newline='') as handle:
         writer = csv.writer(handle, lineterminator='\n')
         for info in infos:

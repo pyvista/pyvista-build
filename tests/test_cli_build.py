@@ -627,6 +627,18 @@ def test_cli_manylinux_image_needs_manylinux(capsys: pytest.CaptureFixture):
     assert '--manylinux-image needs --manylinux' in capsys.readouterr().err
 
 
+def test_cli_container_env_and_mounts(captured: list[BuildConfig], capsys: pytest.CaptureFixture):
+    main('vtk --dry-run --manylinux')
+    assert (captured[-1].env, captured[-1].mounts) == ([], [])
+    main('vtk --dry-run --manylinux --env MY_* --env TAG --mount /h/data:/data --mount /h:/ro:ro')
+    assert captured[-1].env == ['MY_*', 'TAG']
+    assert captured[-1].mounts == ['/h/data:/data', '/h:/ro:ro']
+    for flag in ('--env MY_*', '--mount /h:/data'):
+        with pytest.raises(SystemExit):
+            main(f'vtk --dry-run {flag}')
+        assert f'{flag.split()[0]} needs --manylinux' in capsys.readouterr().err
+
+
 def test_cli_cache_dir_rejected_without_compiler_cache(capsys: pytest.CaptureFixture):
     with pytest.raises(SystemExit):
         main('vtk --dry-run --compiler-cache none --cache-dir cache')

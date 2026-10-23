@@ -1439,15 +1439,21 @@ def _sha256(data: bytes) -> str:
 
 
 def test_strip_wheel_without_record(tmp_path: Path, mocker: MockerFixture):
-    """A wheel without RECORD is repacked as is."""
+    """A wheel without RECORD is an error, and the repair phase reports it as a build error."""
     wheel = tmp_path / 'demo.whl'
     with zipfile.ZipFile(wheel, 'w') as archive:
         archive.writestr('demo/text.so', b'plain')
-    run = mocker.patch.object(repair.subprocess, 'run')
-    assert repair.strip_wheel(wheel) == []
-    run.assert_not_called()
-    with zipfile.ZipFile(wheel) as archive:
-        assert archive.namelist() == ['demo/text.so']
+    mocker.patch.object(repair.subprocess, 'run')
+    with pytest.raises(repair.RepairError, match='no RECORD'):
+        repair.strip_wheel(wheel)
+    builder = _builder(tmp_path, mocker, os_name='macos', repair=True)
+    builder._manifest = replace(builder.manifest, repair_strip=True)
+    cfg = builder.config
+    cfg.wheelhouse.mkdir(parents=True)
+    repaired = cfg.wheelhouse / 'vtk-9.7.0-cp314-cp314-macosx_11_0_arm64.whl'
+    mocker.patch.object(builder, 'run', side_effect=lambda *_, **__: _write_wheel(repaired, b'x'))
+    with pytest.raises(BuildError, match='no RECORD'):
+        builder.phase_repair()
 
 
 @pytest.mark.parametrize('os_name', OS_NAMES)
@@ -1613,11 +1619,22 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     forwarded = [listed[i + 1] for i, part in enumerate(listed) if part == '--env']
     assert forwarded == ['DEMO_PGO', 'TAG']
     env = {'CCACHE_DIR': '/h', 'CCACHE_BASEDIR': '/s', 'CCACHE_MAXSIZE': '1G'}
+    env.update(CCACHE_LOGFILE='f', CCACHE_CONFIGPATH='c')
     listed = manylinux.docker_command(
         'img', mounts={}, script='true', interactive=False, env=env, passthrough=['CCACHE_*']
     )
     forwarded = [listed[i + 1] for i, part in enumerate(listed) if part == '--env']
     assert forwarded == ['CCACHE_MAXSIZE']
+    listed = manylinux.docker_command(
+        'img',
+        mounts={'/data': tmp_path, '/ro': tmp_path},
+        script='true',
+        interactive=False,
+        env={},
+        read_only=['/ro'],
+    )
+    assert f'{tmp_path}:/data' in listed
+    assert f'{tmp_path}:/ro:ro' in listed
     assert cmd[cmd.index('--volume') + 1] == f'{tmp_path / "build"}:/work'
     assert f'{tmp_path / "src"}:/src' in cmd
     assert f'{tmp_path / "pv"}:/opt/pyvista-build-host/pyvista_build:ro' in cmd
@@ -1628,6 +1645,119 @@ def test_manylinux_helpers(tmp_path: Path, mocker: MockerFixture):
     mocker.patch.object(manylinux.os, 'getuid', return_value=501, create=True)
     mocker.patch.object(manylinux.os, 'getgid', return_value=20, create=True)
     assert manylinux.file_owner() == '501:20'
+
+
+@pytest.mark.parametrize(
+    ('spec', 'expected'),
+    [
+        ('/h/data:/data', (Path('/h/data'), '/data', False)),
+        ('/h/data:/data/:ro', (Path('/h/data'), '/data', True)),
+        ('C:\\data:/data', (Path('C:\\data'), '/data', False)),
+        ('rel:/mnt/x', (Path('rel'), '/mnt/x', False)),
+    ],
+)
+def test_parse_mount(spec, expected):
+    assert manylinux.parse_mount(spec) == expected
+
+
+@pytest.mark.parametrize(
+    ('spec', 'match'),
+    [
+        ('/h/data', 'absolute container path'),
+        ('/h/data:data', 'absolute container path'),
+        (':/data', 'absolute container path'),
+        ('/h:/work', 'mounts /work'),
+        ('/h:/src/sub', 'mounts /work'),
+        ('/h:/opt/pyvista-build-host/x', 'mounts /work'),
+        ('/h:/opt', 'mounts /work'),
+        ('/h:/', 'mounts /work'),
+        ('/h:/data:rw', 'ro the only mode'),
+    ],
+)
+def test_parse_mount_rejects(spec, match):
+    with pytest.raises(ValueError, match=match):
+        manylinux.parse_mount(spec)
+
+
+def test_build_in_manylinux_env_and_mounts(tmp_path: Path, mocker: MockerFixture):
+    """--env and --mount reach docker run, and the extra mounts are not created or chowned."""
+    mocker.patch.object(phases.time, 'time', return_value=1000.0)
+    mocker.patch.object(tools.shutil, 'which', side_effect=lambda name, **_: f'/usr/bin/{name}')
+    mocker.patch.object(
+        subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, stdout='')
+    )
+    mocker.patch.object(manylinux, 'file_owner', return_value='7:7')
+    data = tmp_path / 'data'
+    data.mkdir()
+    cfg = _config(
+        tmp_path,
+        dry_run=False,
+        yes=True,
+        manylinux='img',
+        env=['MY_*', 'TAG'],
+        mounts=[f'{data}:/data', f'{tmp_path}:/ro:ro'],
+        repair=False,
+        compiler_cache='none',
+    )
+    src = tmp_path / 'src'
+    (src / '.git').mkdir(parents=True)
+    cfg.source = src
+    real = phases.find_manifest
+    mocker.patch.object(
+        phases,
+        'find_manifest',
+        side_effect=lambda *a: replace(real(*a), manylinux_env=('DEMO_*',)),
+    )
+    builder = Builder(cfg, Console(quiet=True))
+    builder.env.update({'DEMO_PGO': 'gen', 'MY_FLAG': '1', 'TAG': 'x', 'OTHER': '2'})
+    run = mocker.patch.object(builder, 'run')
+    mocker.patch.object(builder, 'phase_install')
+    cfg.dist_dir.mkdir(parents=True)
+    wheel = cfg.dist_dir / 'vtk-1-cp314-cp314-linux_x86_64.whl'
+    wheel.write_text('')
+    os.utime(wheel, (1500.0, 1500.0))
+    builder.build()
+    docker = run.call_args.args[0]
+    forwarded = [docker[i + 1] for i, part in enumerate(docker) if part == '--env']
+    assert forwarded == ['DEMO_PGO', 'MY_FLAG', 'TAG']
+    assert f'{data}:/data' in docker
+    assert f'{tmp_path}:/ro:ro' in docker
+    script = docker[-1]
+    assert '/data' not in script.split('EXIT')[0]
+    assert f'chown -R 7:7 {manylinux.WORK} {manylinux.SOURCE} ' in script
+    missing = tmp_path / 'nope'
+    cfg.mounts = [f'{missing}:/data']
+    with pytest.raises(BuildError, match='is not a directory'):
+        builder.build()
+    cfg.mounts = [f'{data}:/data', f'{data}:/data']
+    with pytest.raises(BuildError, match='mounted twice'):
+        builder.build()
+    cfg.mounts = ['bad']
+    with pytest.raises(BuildError, match='absolute container path'):
+        builder.build()
+    cfg.mounts = [f'{missing}:/data']
+    cfg.dry_run = True
+    builder = Builder(cfg, Console(quiet=True))
+    run = mocker.patch.object(builder, 'run')
+    builder.build()
+    assert f'{missing}:/data' in run.call_args.args[0]
+
+
+def test_container_ccache_maxsize_default(tmp_path: Path, mocker: MockerFixture):
+    """The container sets CCACHE_MAXSIZE unless the host passed one in; the host never does."""
+    for in_container, preset, expected in (
+        (True, None, manylinux.CCACHE_MAXSIZE),
+        (True, '1G', '1G'),
+        (False, None, None),
+    ):
+        builder = _builder(tmp_path, mocker, compiler_cache='ccache', in_container=in_container)
+        mocker.patch.object(
+            tools, 'compiler_cache_tool', return_value=tools.Tool('ccache', ('ccache',))
+        )
+        if preset is not None:
+            builder.env['CCACHE_MAXSIZE'] = preset
+        builder._activate_compiler_cache()
+        assert builder.env.get('CCACHE_MAXSIZE') == expected
 
 
 def test_unusable_python(tmp_path: Path):

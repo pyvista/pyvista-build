@@ -222,6 +222,22 @@ def build(
         str | None,
         Parameter(help='Container image for ``--manylinux``. Defaults to manylinux_2_28.'),
     ] = None,
+    env: Annotated[
+        list[str] | None,
+        Parameter(
+            negative='',
+            help='Environment variable to pass into the ``--manylinux`` container, by name or '
+            '``fnmatch`` pattern such as ``MY_*``. Repeatable.',
+        ),
+    ] = None,
+    mount: Annotated[
+        list[str] | None,
+        Parameter(
+            negative='',
+            help='Extra directory for the ``--manylinux`` container, ``HOST:CONTAINER`` or '
+            '``HOST:CONTAINER:ro``. Repeatable.',
+        ),
+    ] = None,
     interactive: Annotated[
         bool,
         Parameter(
@@ -268,6 +284,10 @@ def build(
         print_error_and_exit('--source and --url are mutually exclusive.')
     if manylinux_image is not None and not manylinux:
         print_error_and_exit('--manylinux-image needs --manylinux.')
+    if env and not manylinux:
+        print_error_and_exit('--env needs --manylinux.')
+    if mount and not manylinux:
+        print_error_and_exit('--mount needs --manylinux.')
     if cache_dir is not None and compiler_cache == 'none':
         print_error_and_exit('--cache-dir has no effect with --compiler-cache none.')
     config = BuildConfig(
@@ -296,6 +316,8 @@ def build(
         dry_run=dry_run,
         verbose=verbose,
         manylinux=(manylinux_image or default_image()) if manylinux else None,
+        env=env or [],
+        mounts=mount or [],
         python=str(python.absolute()) if python is not None else default_python(),
     )
     for line in _defaults_line:
