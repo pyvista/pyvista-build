@@ -79,6 +79,12 @@ Build a portable Linux wheel inside a manylinux container (needs Docker, see
 
     pyvista-build vtk --manylinux
 
+Pass more of the environment and another directory into that container:
+
+.. code-block:: bash
+
+    pyvista-build vtk --manylinux --env 'MY_*' --mount /data/sdk:/sdk:ro
+
 .. _dry-run:
 
 Dry Run

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from packaging.requirements import Requirement
 
 if TYPE_CHECKING:
+    from collections.abc import Collection
     from collections.abc import Mapping
     from collections.abc import Sequence
 
@@ -32,9 +33,11 @@ CCACHE_SHA256 = {
     'aarch64': '40623f11012a97d60c7d90058d7e3c8c70a3802af53a34067b89e6345c89db69',
 }
 DOCKER_INSTRUCTIONS = 'Install Docker: https://docs.docker.com/get-docker/'
-_HOST_PATH_VARS = frozenset(
-    {'CCACHE_BASEDIR', 'CCACHE_CONFIGPATH', 'CCACHE_DIR', 'CCACHE_LOGFILE', 'SCCACHE_DIR'}
-)
+_HOST_PATH_VARS = frozenset({'CCACHE_CONFIGPATH', 'CCACHE_DIR', 'CCACHE_LOGFILE', 'SCCACHE_DIR'})
+#: Cache size the build inside the container sets when the host did not set ``CCACHE_MAXSIZE``.
+CCACHE_MAXSIZE = '30G'
+#: Container paths the build uses itself, so ``--mount`` cannot take them.
+RESERVED_PATHS = (WORK, SOURCE, CACHE, SUMMARY, PACKAGE_ROOT)
 #: Terminal color settings the build inside the container follows as well.
 COLOR_VARS = ('FORCE_COLOR', 'NO_COLOR', 'TERM', 'COLUMNS')
 
@@ -206,6 +209,45 @@ def container_script(
     return '\n'.join(lines)
 
 
+def parse_mount(spec: str) -> tuple[Path, str, bool]:
+    """Split a ``--mount HOST:CONTAINER[:ro]`` value.
+
+    Parameters
+    ----------
+    spec : str
+        Host path, an absolute container path, and an optional ``ro`` mode, colon-separated.
+        A Windows drive letter in the host path is kept.
+
+    Returns
+    -------
+    Path
+        Host path.
+
+    str
+        Container path.
+
+    bool
+        Whether the mount is read-only.
+
+    Raises
+    ------
+    ValueError
+        When the value has no absolute container path or names a path the build uses.
+
+    """
+    read_only = spec.endswith(':ro')
+    body = spec[:-3] if read_only else spec
+    host, sep, inside = body.rpartition(':')
+    if not sep or not host or not inside.startswith('/'):
+        msg = f'--mount takes HOST:CONTAINER[:ro] with an absolute container path, not {spec!r}.'
+        raise ValueError(msg)
+    inside = inside.rstrip('/') or '/'
+    if any(inside == p or inside.startswith(f'{p}/') for p in RESERVED_PATHS) or inside == '/':
+        msg = f'--mount cannot use {inside}: the build mounts {", ".join(RESERVED_PATHS)} itself.'
+        raise ValueError(msg)
+    return Path(host), inside, read_only
+
+
 def docker_command(
     image: str,
     *,
@@ -214,6 +256,7 @@ def docker_command(
     interactive: bool,
     env: Mapping[str, str],
     passthrough: Sequence[str] = (),
+    read_only: Collection[str] = (),
 ) -> list[str]:
     """Assemble the ``docker run`` command.
 
@@ -237,6 +280,9 @@ def docker_command(
     passthrough : Sequence[str]
         Names or ``fnmatch`` patterns of further variables to pass through.
 
+    read_only : Collection[str]
+        Container paths among ``mounts`` to mount read-only.
+
     Returns
     -------
     list[str]
@@ -247,7 +293,7 @@ def docker_command(
     if interactive:
         cmd.append('-t')
     for inside, outside in mounts.items():
-        mode = ':ro' if inside.startswith(PACKAGE_ROOT) else ''
+        mode = ':ro' if inside.startswith(PACKAGE_ROOT) or inside in read_only else ''
         cmd += ['--volume', f'{outside}:{inside}{mode}']
     for name in sorted(env):
         cache = name.startswith(('CCACHE_', 'SCCACHE_'))

@@ -218,9 +218,9 @@ Exactly one of ``cmake`` and ``env`` is set.
     Environment variables ``--manylinux`` passes from the host into the
     container, by name or ``fnmatch`` pattern. The ``CCACHE_*`` and
     ``SCCACHE_*`` settings and the terminal color variables go in without
-    being listed, and the cache's host paths (``CCACHE_DIR``,
-    ``CCACHE_BASEDIR`` and the others named in :doc:`building`) stay on
-    the host even when a pattern matches them.
+    being listed, and the cache's host paths (``CCACHE_DIR`` and the others
+    named in :doc:`building`) stay on the host even when a pattern matches
+    them. ``--env`` adds names for one build.
 
 .. code-block:: toml
 
