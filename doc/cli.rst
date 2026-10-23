@@ -3,8 +3,8 @@ Command Reference
 Command-line interface for building a VTK backend wheel from source.
 
 ``pyvista-build vtk`` clones VTK, checks for the build tools, configures and
-compiles it much like PyVista's CI does, and writes a wheel. It works
-on Linux, macOS, and Windows. See :doc:`building` for the eight steps in
+compiles it with the module set of the stock PyPI wheel, and writes a wheel.
+It works on Linux, macOS, and Windows. See :doc:`building` for the eight steps in
 detail, the module groups, portable Linux wheels, and the developer loop.
 
 Examples

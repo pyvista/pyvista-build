@@ -91,8 +91,9 @@ Get the VTK source to build.
 Choose which modules and options to build.
 
 On top of the modules every build has, the modules to build are organized
-into named groups. The default set matches the stock wheel plus what
-PyVista's CI enables:
+into named groups. The default set follows the stock PyPI wheel, so a wheel
+built here and the stock one are interchangeable under PyVista's test
+suite:
 
 - ``rendering``: OpenGL rendering, widgets, charts, and text
 - ``io``: extra readers and writers (scene import, Exodus, Xdmf2)
